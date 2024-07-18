@@ -5,7 +5,7 @@ import {
 
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
-import { createCompletion } from './handler';
+import { makePostRequest, createCompletion } from './handler';
 
 /**
  * Initialization data for the jupyter_copilot extension.
@@ -44,6 +44,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
       .catch(error => {
         console.error('Error:', error);
       });
+
+    makePostRequest('login', {}).then(response => {
+      console.log('login response:', response);
+    });
   }
 };
 

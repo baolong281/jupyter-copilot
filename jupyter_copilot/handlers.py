@@ -7,8 +7,16 @@ from jupyter_server.utils import url_path_join
 import tornado
 
 
-class CopilotHandler(APIHandler):
-    token = None
+class CopilotClient():
+    @classmethod
+    def __init__(cls):
+        try:
+            with open('.copilot_token', 'r') as f:
+                access_token = f.read()
+        except FileNotFoundError:
+            access_token = None
+
+        cls.token = access_token
 
     @classmethod
     def get_token(cls):
@@ -19,7 +27,8 @@ class CopilotHandler(APIHandler):
                     access_token = f.read()
                     break
             except FileNotFoundError:
-                cls.setup()
+                # hang until the file is created
+                time.sleep(15)
 
         # Get a session with the access token
         resp = requests.get('https://api.github.com/copilot_internal/v2/token', headers={
@@ -95,26 +104,7 @@ class CopilotHandler(APIHandler):
                 return int(value.strip())
         return None
 
-    @tornado.web.authenticated
-    async def post(self):
-        body = self.get_json_body()
-        prompt = body.get('prompt')
-        language = body.get('language', 'python')
-        logging.info("Prompt: " + prompt)
-
-        if self.token is None or self.is_token_invalid():
-            self.get_token()
-
-        try:
-            resp = await self.copilot(prompt, language)
-            logging.info(f'Copilot response: {resp}')
-            self.finish(resp)
-        except Exception as e:
-            self.set_status(500)
-            logging.info(f'Error: {e}')
-            self.finish(str(e))
-
-    async def copilot(self, prompt, language='python'):
+    async def get_completion(self, prompt, language='python'):
         resp = await tornado.httpclient.AsyncHTTPClient().fetch(
             'https://copilot-proxy.githubusercontent.com/v1/engines/copilot-codex/completions',
             method='POST',
@@ -149,18 +139,65 @@ class CopilotHandler(APIHandler):
         return result
 
 
+Copilot = CopilotClient()
+
+
+class CompletionHandler(APIHandler):
+
+    @tornado.web.authenticated
+    async def post(self):
+        body = self.get_json_body()
+        prompt = body.get('prompt')
+        language = body.get('language', 'python')
+        logging.info("Prompt: " + prompt)
+
+        if Copilot.token is None or Copilot.is_token_invalid():
+            # set error
+            self.set_status(500)
+            self.finish('Token is invalid or not set')
+
+        try:
+            resp = await Copilot.get_completion(prompt, language)
+            logging.info(f'Copilot response: {resp}')
+            self.finish(resp)
+        except Exception as e:
+            self.set_status(500)
+            logging.info(f'Error: {e}')
+            self.finish(str(e))
+
+    @tornado.web.authenticated
+    async def post_login(self):
+        logging.info('Logging in')
+        self.finish('Logging in')
+
+
+class AuthHandler(APIHandler):
+    @tornado.web.authenticated
+    async def post(self):
+        logging.info('Auth handler')
+        self.finish("hello from Auth handler")
+
+
 def setup_handlers(server_app):
     global logging
     logging = server_app.log
 
     web_app = server_app.web_app
     host_pattern = ".*$"
-    route_pattern = url_path_join(
-        web_app.settings['base_url'], 'jupyter-copilot', '/copilot') + "?.*"
-    handlers = [(route_pattern, CopilotHandler)]
+    base_url = web_app.settings['base_url']
+
+    handlers = [
+        (url_path_join(base_url, 'jupyter-copilot',
+                       '/copilot'), CompletionHandler),
+        (url_path_join(base_url, 'jupyter-copilot',
+                       '/login'), AuthHandler),
+    ]
     web_app.add_handlers(host_pattern, handlers)
     logging.info(
-        f"Jupyter Copilot server extension is activated at {route_pattern}")
+        f"Jupyter Copilot server extension is activated with {handlers}")
+
+    if (Copilot.token is None):
+        Copilot.setup()
 
     # Start token refresh thread
-    # threading.Thread(target=CopilotHandler.token_thread, daemon=True).start()
+    threading.Thread(target=Copilot.token_thread, daemon=True).start()
