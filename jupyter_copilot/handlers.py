@@ -143,8 +143,8 @@ Copilot = CopilotClient()
 
 
 class CompletionHandler(APIHandler):
-
     @tornado.web.authenticated
+    # handles the Copilot completion request
     async def post(self):
         body = self.get_json_body()
         prompt = body.get('prompt')
@@ -165,14 +165,11 @@ class CompletionHandler(APIHandler):
             logging.info(f'Error: {e}')
             self.finish(str(e))
 
-    @tornado.web.authenticated
-    async def post_login(self):
-        logging.info('Logging in')
-        self.finish('Logging in')
-
 
 class AuthHandler(APIHandler):
     @tornado.web.authenticated
+    # handles the Copilot authentication request
+    # TODO
     async def post(self):
         logging.info('Auth handler')
         self.finish("hello from Auth handler")
@@ -194,7 +191,7 @@ def setup_handlers(server_app):
     ]
     web_app.add_handlers(host_pattern, handlers)
     logging.info(
-        f"Jupyter Copilot server extension is activated with {handlers}")
+        f"Jupyter Copilot server handlers activated")
 
     if (Copilot.token is None):
         Copilot.setup()
