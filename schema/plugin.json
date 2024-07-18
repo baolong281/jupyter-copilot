@@ -1,0 +1,8 @@
+{
+  "jupyter.lab.shortcuts": [],
+  "title": "jupyter_copilot",
+  "description": "jupyter_copilot settings.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}

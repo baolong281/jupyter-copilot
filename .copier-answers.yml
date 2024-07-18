@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v4.3.4
+_src_path: https://github.com/jupyterlab/extension-template
+author_email: dylanhuyn@gmail.com
+author_name: jupyter_copilot
+has_binder: true
+has_settings: true
+kind: server
+labextension_name: jupyter_copilot
+project_short_description: GitHub Copilot for Jupyter
+python_name: jupyter_copilot
+repository: ''
+test: false
+
