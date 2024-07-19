@@ -53,7 +53,9 @@ class NotebookManager:
 class NotebookLSPHandler(WebSocketHandler):
     def initialize(self):
         self.notebook_manager = None
+        # we need a queue so that we can fully process one request before moving onto the next
         self.message_queue = asyncio.Queue()
+        # register functino to run in the background
         IOLoop.current().add_callback(self.process_message_queue)
 
     async def open(self):
@@ -68,6 +70,8 @@ class NotebookLSPHandler(WebSocketHandler):
         except json.JSONDecodeError:
             logging.error(f"Received invalid JSON: {message}")
 
+    # constantly runs in the background to process messages from the queue
+    # fully processes one message before moving onto the next to not break stuff
     async def process_message_queue(self):
         while True:
             try:
