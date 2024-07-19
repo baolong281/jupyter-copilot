@@ -49,12 +49,15 @@ const plugin: JupyterFrontEndPlugin<void> = {
           client.dispose();
           console.log('Notebook disposed:', notebook.context.path);
         });
+
+        // notifies the extension server when a cell is added or removed
+        // swapping consists of an add and a remove, so this should be sufficient
         notebook.model?.cells.changed.connect((list, change) => {
-          console.log(change);
-          if (change.type === 'move') {
-            console.log('Cell moved:');
-            console.log('Old index:', change.oldIndex);
-            console.log('New index:', change.newIndex);
+          if (change.type === 'remove') {
+            client.sendCellDelete(change.oldIndex);
+          } else if (change.type === 'add') {
+            const content = change.newValues[0].sharedModel.getSource();
+            client.sendCellAdd(change.newIndex, content);
           }
         });
 
@@ -65,11 +68,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
             const content = cell.sharedModel.getSource();
             client.sendCellUpdate(notebook.content.activeCellIndex, content);
           });
-
-          // run when cell is moved
-          //   notebook.model?.cells.changed.connect((_, changed) => {
-          //     console.log(changed.oldIndex, ' -> ', changed.newIndex);
-          //   });
         });
       });
     });

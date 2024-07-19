@@ -8,8 +8,9 @@ import json
 import nbformat
 import os
 
-
 # manages the content of the notebook in memory
+
+
 class NotebookManager:
     def __init__(self, path):
         self.path = path
@@ -34,17 +35,34 @@ class NotebookManager:
     def extract_code_cells(self, notebook):
         return [cell.source for cell in notebook.cells if (cell.cell_type == "code" or cell.cell_type == "markdown")]
 
+    # deletes a cell from the array
+    def delete_cell(self, cell_id):
+        logging.info(f"Deleting cell {cell_id}")
+        if 0 <= cell_id < len(self.notebook_cells):
+            self.notebook_cells.pop(cell_id)
+        else:
+            logging.error(f"Cell {cell_id} does not exist")
+
+    # insert a cell into the array
+    def add_cell(self, cell_id, content):
+        logging.info(f"Adding cell {cell_id} with content: {content}")
+        if 0 <= cell_id <= len(self.notebook_cells):
+            self.notebook_cells.insert(cell_id, content)
+        elif cell_id > len(self.notebook_cells):
+            # fill in the gap with empty strings if the cell_id is greater than the length of the array for some reason
+            for _ in range(cell_id - len(self.notebook_cells)):
+                self.notebook_cells.append('')
+            self.notebook_cells.append(content)
+
+        logging.info(self.notebook_cells)
+
     # index into array and update the content of a cell
     def update_cell(self, cell_id, content):
         logging.info(f"Updating cell {cell_id} with content: {content}")
         if 0 <= cell_id < len(self.notebook_cells):
             self.notebook_cells[cell_id] = content
-        elif cell_id > len(self.notebook_cells):
-            # if if the index is larger than the length of the array, fill the array with empty strings until the index
-            # we do not get the message if a new cell is created, only when a cell is updated
-            for _ in range(cell_id - len(self.notebook_cells)):
-                self.notebook_cells.append('')
-            self.notebook_cells.append(content)
+        else:
+            logging.error(f"Cell {cell_id} does not exist")
 
     def get_full_code(self):
         return "\n\n".join(self.notebook_cells)
@@ -77,11 +95,14 @@ class NotebookLSPHandler(WebSocketHandler):
             try:
                 logging.info("q info %s", self.message_queue._format())
                 data = await self.message_queue.get()
-                logging.info("Received message: %s", data)
-                if data['type'] == 'sync_request':
-                    await self.handle_sync_request()
-                elif data['type'] == 'cell_update':
+                if data['type'] == 'cell_update':
                     await self.handle_cell_update(data)
+                elif data['type'] == 'cell_add':
+                    await self.handle_cell_add(data)
+                elif data['type'] == 'cell_delete':
+                    await self.handle_cell_delete(data)
+                elif data['type'] == 'sync_request':
+                    await self.handle_sync_request()
                 # Add other message types as needed
             except Exception as e:
                 logging.error(f"Error processing message: {e}")
@@ -92,10 +113,16 @@ class NotebookLSPHandler(WebSocketHandler):
         code = self.notebook_manager.get_full_code()
         await self.send_message('sync_response', {'code': code})
 
+    async def handle_cell_add(self, data):
+        self.notebook_manager.add_cell(data['cell_id'], data['content'])
+
     async def handle_cell_update(self, data):
         self.notebook_manager.update_cell(data['cell_id'], data['content'])
         code = self.notebook_manager.get_full_code()
         await self.send_message('lsp_update', {'code': code})
+
+    async def handle_cell_delete(self, data):
+        self.notebook_manager.delete_cell(data['cell_id'])
 
     async def send_message(self, msg_type, payload):
         message = json.dumps({'type': msg_type, **payload})

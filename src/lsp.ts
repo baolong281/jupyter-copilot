@@ -30,7 +30,15 @@ class NotebookLSPClient {
   // we don't want to update the entire file every time something is changed
   // so we specify a cell id and the now content so we can modify just that single cell
   public sendCellUpdate(cellId: number, content: string) {
-    this.sendMessage('cell_update', { cell_id: cellId, content });
+    this.sendMessage('cell_update', { cell_id: cellId, content: content });
+  }
+
+  public sendCellDelete(cellID: number) {
+    this.sendMessage('cell_delete', { cell_id: cellID });
+  }
+
+  public sendCellAdd(cellID: number, content: string) {
+    this.sendMessage('cell_add', { cell_id: cellID, content: content });
   }
 
   private sendMessage(type: string, payload: any) {
