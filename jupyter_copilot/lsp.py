@@ -4,6 +4,11 @@ import threading
 import time
 from typing import Dict, Callable, Any, Optional
 import os
+# Wrapper class for interfacing with the Copilot LSP.
+# initializes, sends messages, and reads output
+# the actual LSP server is from copilot-node-server which actually calls Copilot servers
+# https://www.npmjs.com/package/copilot-node-server?activeTab=dependents
+# the LSP requires that we communicate with it through stdout using json rpc
 
 
 class LSPWrapper:
@@ -12,6 +17,7 @@ class LSPWrapper:
             ' '.join(lsp_command)}")
         self.logger = logger
         try:
+            # start the process and throw an error if it fails
             self.process = subprocess.Popen(
                 lsp_command,
                 stdin=subprocess.PIPE,
@@ -35,6 +41,8 @@ class LSPWrapper:
             raise
 
         self.request_id = 0
+
+        # these maps hold callbacks for requests for when we recieve a response
         self.resolve_map: Dict[int, Callable[[Any], None]] = {}
         self.reject_map: Dict[int, Callable[[Any], None]] = {}
 
@@ -56,6 +64,7 @@ class LSPWrapper:
             self.logger.error(self.process.stderr.read())
             return False
 
+    # constantly polling in a seperate thread
     def _read_output(self):
         while self.is_process_running():
             header = self.process.stdout.readline()
@@ -65,9 +74,17 @@ class LSPWrapper:
                 content_length = int(header.strip().split(': ')[1])
                 self.process.stdout.readline()  # Read the empty line
                 content = self.process.stdout.read(content_length)
+                # whenever we get a message, we process it
                 self._handle_received_payload(json.loads(content))
             except Exception as e:
                 self.logger.error(f"Error processing server output: {e}")
+
+    # when we send notifications, we don't expect a response
+
+    def send_notification(self, method: str, params: dict):
+        self._send_message({"method": method, "params": params})
+
+    # send message to lsp through stdin with special lsp format
 
     def _send_message(self, data: dict):
         if not self.is_process_running():
@@ -85,6 +102,8 @@ class LSPWrapper:
                 "Error: Broken pipe. The LSP server process may have terminated unexpectedly.")
             raise
 
+    # send request to lsp and wait for response
+    # if a response comes, then handle_received_payload will be called
     def send_request(self, method: str, params: dict) -> Any:
         self.request_id += 1
         self._send_message(
@@ -100,24 +119,34 @@ class LSPWrapper:
             response['error'] = payload
             result.set()
 
+        # put the callback into the map
+        # when we get the response, we will call resolve or reject and the entry will be popped
         self.resolve_map[self.request_id] = resolve
         self.reject_map[self.request_id] = reject
-        result.wait(timeout=10)  # Add a timeout to prevent indefinite waiting
 
+        # 10 second timeout to prevent indefinite waiting
+        # this will immediately stop blocking if the result is set by calling either resolve or reject
+        result.wait(timeout=10)
+
+        # at this point if a response has not been received then result will not be set, so we throw an error
         if not result.is_set():
             raise TimeoutError(f"Request timed out: method={
                                method}, id={self.request_id}")
 
         if 'error' in response:
             raise Exception(response['error'])
+
+        self.resolve_map.pop(self.request_id, None)
+        self.reject_map.pop(self.request_id, None)
         return response['result']
 
-    def send_notification(self, method: str, params: dict):
-        self._send_message({"method": method, "params": params})
-
+    # when we get a message, we process it
+    # if it has an id, then we call the resolve or reject callback
     def _handle_received_payload(self, payload: dict):
+        self.logger.info("payload: %s", payload)
         if "id" in payload:
             if "result" in payload:
+                # pop from map then call
                 resolve = self.resolve_map.pop(payload["id"], None)
                 if resolve:
                     resolve(payload["result"])
