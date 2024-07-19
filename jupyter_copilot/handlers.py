@@ -1,3 +1,5 @@
+import asyncio
+from tornado.ioloop import IOLoop
 from jupyter_server.base.handlers import APIHandler
 from tornado.websocket import WebSocketHandler
 from jupyter_server.utils import url_path_join
@@ -51,34 +53,54 @@ class NotebookManager:
 class NotebookLSPHandler(WebSocketHandler):
     def initialize(self):
         self.notebook_manager = None
+        self.message_queue = asyncio.Queue()
+        IOLoop.current().add_callback(self.process_message_queue)
 
-    def open(self):
+    async def open(self):
         self.notebook_path = self.get_argument('path', '')
         self.notebook_manager = NotebookManager(self.notebook_path)
-        self.send_message('connection_established', {})
+        await self.send_message('connection_established', {})
 
-    def on_message(self, message):
-        data = json.loads(message)
-        if data['type'] == 'sync_request':
-            self.handle_sync_request()
-        elif data['type'] == 'cell_update':
-            self.handle_cell_update(data)
+    async def on_message(self, message):
+        try:
+            data = json.loads(message)
+            await self.message_queue.put(data)
+        except json.JSONDecodeError:
+            logging.error(f"Received invalid JSON: {message}")
 
-    def handle_sync_request(self):
+    async def process_message_queue(self):
+        while True:
+            try:
+                logging.info("q info %s", self.message_queue._format())
+                data = await self.message_queue.get()
+                logging.info("Received message: %s", data)
+                if data['type'] == 'sync_request':
+                    await self.handle_sync_request()
+                elif data['type'] == 'cell_update':
+                    await self.handle_cell_update(data)
+                # Add other message types as needed
+            except Exception as e:
+                logging.error(f"Error processing message: {e}")
+            finally:
+                self.message_queue.task_done()
+
+    async def handle_sync_request(self):
         code = self.notebook_manager.get_full_code()
-        self.send_message('sync_response', {'code': code})
+        await self.send_message('sync_response', {'code': code})
 
-    def handle_cell_update(self, data):
+    async def handle_cell_update(self, data):
         self.notebook_manager.update_cell(data['cell_id'], data['content'])
         code = self.notebook_manager.get_full_code()
-        self.send_message('lsp_update', {'code': code})
+        await self.send_message('lsp_update', {'code': code})
 
-    def send_message(self, msg_type, payload):
+    async def send_message(self, msg_type, payload):
         message = json.dumps({'type': msg_type, **payload})
-        self.write_message(message)
+        try:
+            await self.write_message(message)
+        except Exception as e:
+            logging.error(f"Error sending message: {e}")
 
     def on_close(self):
-        # Clean up resources if needed
         logging.info("WebSocket closed")
         self.notebook_manager = None
 
@@ -89,7 +111,6 @@ def setup_handlers(server_app):
     web_app = server_app.web_app
     host_pattern = ".*$"
     base_url = web_app.settings["base_url"] + "jupyter-copilot"
-
     handlers = [
         (url_path_join(base_url, "ws"), NotebookLSPHandler)
     ]

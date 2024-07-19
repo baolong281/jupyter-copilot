@@ -11,7 +11,6 @@ import { NotebookLSPClient } from './lsp';
 /**
  * Initialization data for the jupyter_copilot extension.
  */
-
 const plugin: JupyterFrontEndPlugin<void> = {
   id: 'jupyter_copilot:plugin',
   description: 'GitHub Copilot for Jupyter',
@@ -50,6 +49,14 @@ const plugin: JupyterFrontEndPlugin<void> = {
           client.dispose();
           console.log('Notebook disposed:', notebook.context.path);
         });
+        notebook.model?.cells.changed.connect((list, change) => {
+          console.log(change);
+          if (change.type === 'move') {
+            console.log('Cell moved:');
+            console.log('Old index:', change.oldIndex);
+            console.log('New index:', change.newIndex);
+          }
+        });
 
         // send the cell content to the LSP server when the current cell is updated
         // TODO: logic for when cells are swapped
@@ -58,6 +65,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
             const content = cell.sharedModel.getSource();
             client.sendCellUpdate(notebook.content.activeCellIndex, content);
           });
+
+          // run when cell is moved
+          //   notebook.model?.cells.changed.connect((_, changed) => {
+          //     console.log(changed.oldIndex, ' -> ', changed.newIndex);
+          //   });
         });
       });
     });
