@@ -1,200 +1,97 @@
-import json
-import requests
-import time
-import threading
 from jupyter_server.base.handlers import APIHandler
+from tornado.websocket import WebSocketHandler
 from jupyter_server.utils import url_path_join
 import tornado
+import json
+import nbformat
+import os
 
 
-class CopilotClient():
-    @classmethod
-    def __init__(cls):
-        try:
-            with open('.copilot_token', 'r') as f:
-                access_token = f.read()
-        except FileNotFoundError:
-            access_token = None
+# manages the content of the notebook in memory
+class NotebookManager:
+    def __init__(self, path):
+        self.path = path
+        # keep all the code in an array of strings so that we can easily update the content of a cell
+        # when a cell is updated, we update the corresponding string in this array
+        # notebook_cells: string[]
+        self.notebook_cells = self.load_notebook()
+        logging.info(self.notebook_cells)
 
-        cls.token = access_token
+    # load notebook content into memory
+    # returns a list of the content in the code cells
+    # should only run when a notebook is first opened
+    def load_notebook(self):
+        if not os.path.exists(self.path):
+            return []
+        with open(self.path, 'r') as f:
+            nb = nbformat.read(f, as_version=4)
+        code = self.extract_code_cells(nb)
+        return code
 
-    @classmethod
-    def get_token(cls):
-        # Check if the .copilot_token file exists
-        while True:
-            try:
-                with open('.copilot_token', 'r') as f:
-                    access_token = f.read()
-                    break
-            except FileNotFoundError:
-                # hang until the file is created
-                time.sleep(15)
+    # extract code cells from a notebook, iterate through all cells then put the content in the code cells into a list
+    def extract_code_cells(self, notebook):
+        return [cell.source for cell in notebook.cells if (cell.cell_type == "code" or cell.cell_type == "markdown")]
 
-        # Get a session with the access token
-        resp = requests.get('https://api.github.com/copilot_internal/v2/token', headers={
-            'authorization': f'token {access_token}',
-            'editor-version': 'Neovim/0.6.1',
-            'editor-plugin-version': 'copilot.vim/1.16.0',
-            'user-agent': 'GithubCopilot/1.155.0'
-        })
+    # index into array and update the content of a cell
+    def update_cell(self, cell_id, content):
+        logging.info(f"Updating cell {cell_id} with content: {content}")
+        if 0 <= cell_id < len(self.notebook_cells):
+            self.notebook_cells[cell_id] = content
+        elif cell_id > len(self.notebook_cells):
+            # if if the index is larger than the length of the array, fill the array with empty strings until the index
+            # we do not get the message if a new cell is created, only when a cell is updated
+            for _ in range(cell_id - len(self.notebook_cells)):
+                self.notebook_cells.append('')
+            self.notebook_cells.append(content)
 
-        # Parse the response json, isolating the token
-        resp_json = resp.json()
-        cls.token = resp_json.get('token')
-
-    @classmethod
-    def setup(cls):
-        resp = requests.post('https://github.com/login/device/code', headers={
-            'accept': 'application/json',
-            'editor-version': 'Neovim/0.6.1',
-            'editor-plugin-version': 'copilot.vim/1.16.0',
-            'content-type': 'application/json',
-            'user-agent': 'GithubCopilot/1.155.0',
-            'accept-encoding': 'gzip,deflate,br'
-        }, data='{"client_id":"Iv1.b507a08c87ecfe98","scope":"read:user"}')
-
-        resp_json = resp.json()
-        device_code = resp_json.get('device_code')
-        user_code = resp_json.get('user_code')
-        verification_uri = resp_json.get('verification_uri')
-
-        logging.info(f'Please visit {verification_uri} and enter code {
-            user_code} to authenticate.')
-
-        while True:
-            time.sleep(5)
-            resp = requests.post('https://github.com/login/oauth/access_token', headers={
-                'accept': 'application/json',
-                'editor-version': 'Neovim/0.6.1',
-                'editor-plugin-version': 'copilot.vim/1.16.0',
-                'content-type': 'application/json',
-                'user-agent': 'GithubCopilot/1.155.0',
-                'accept-encoding': 'gzip,deflate,br'
-            }, data=f'{{"client_id":"Iv1.b507a08c87ecfe98","device_code":"{device_code}","grant_type":"urn:ietf:params:oauth:grant-type:device_code"}}')
-
-            resp_json = resp.json()
-            access_token = resp_json.get('access_token')
-
-            if access_token:
-                break
-
-        with open('.copilot_token', 'w') as f:
-            f.write(access_token)
-
-        logging.info('Authentication success!')
-
-    @classmethod
-    def token_thread(cls):
-        while True:
-            cls.get_token()
-            time.sleep(25 * 60)
-
-    @classmethod
-    def is_token_invalid(cls):
-        if cls.token is None or 'exp' not in cls.token or cls.extract_exp_value(cls.token) <= time.time():
-            return True
-        return False
-
-    @classmethod
-    def extract_exp_value(cls, token):
-        pairs = token.split(';')
-        for pair in pairs:
-            key, value = pair.split('=')
-            if key.strip() == 'exp':
-                return int(value.strip())
-        return None
-
-    async def get_completion(self, prompt, language='python'):
-        resp = await tornado.httpclient.AsyncHTTPClient().fetch(
-            'https://copilot-proxy.githubusercontent.com/v1/engines/copilot-codex/completions',
-            method='POST',
-            headers={'authorization': f'Bearer {self.token}'},
-            body=json.dumps({
-                'prompt': prompt,
-                'suffix': '',
-                'max_tokens': 1000,
-                'temperature': 0,
-                'top_p': 1,
-                'n': 1,
-                'stop': ['\n'],
-                'nwo': 'github/copilot.vim',
-                'stream': True,
-                'extra': {
-                    'language': language
-                }
-            })
-        )
-
-        result = ''
-        resp_text = resp.body.decode('utf-8').split('\n')
-        for line in resp_text:
-            if line.startswith('data: {'):
-                json_completion = json.loads(line[6:])
-                completion = json_completion.get('choices')[0].get('text')
-                if completion:
-                    result += completion
-                else:
-                    result += '\n'
-
-        return result
+    def get_full_code(self):
+        return "\n\n".join(self.notebook_cells)
 
 
-Copilot = CopilotClient()
+class NotebookLSPHandler(WebSocketHandler):
+    def initialize(self):
+        self.notebook_manager = None
 
+    def open(self):
+        self.notebook_path = self.get_argument('path', '')
+        self.notebook_manager = NotebookManager(self.notebook_path)
+        self.send_message('connection_established', {})
 
-class CompletionHandler(APIHandler):
-    @tornado.web.authenticated
-    # handles the Copilot completion request
-    async def post(self):
-        body = self.get_json_body()
-        prompt = body.get('prompt')
-        language = body.get('language', 'python')
-        logging.info("Prompt: " + prompt)
+    def on_message(self, message):
+        data = json.loads(message)
+        if data['type'] == 'sync_request':
+            self.handle_sync_request()
+        elif data['type'] == 'cell_update':
+            self.handle_cell_update(data)
 
-        if Copilot.token is None or Copilot.is_token_invalid():
-            # set error
-            self.set_status(500)
-            self.finish('Token is invalid or not set')
+    def handle_sync_request(self):
+        code = self.notebook_manager.get_full_code()
+        self.send_message('sync_response', {'code': code})
 
-        try:
-            resp = await Copilot.get_completion(prompt, language)
-            logging.info(f'Copilot response: {resp}')
-            self.finish(resp)
-        except Exception as e:
-            self.set_status(500)
-            logging.info(f'Error: {e}')
-            self.finish(str(e))
+    def handle_cell_update(self, data):
+        self.notebook_manager.update_cell(data['cell_id'], data['content'])
+        code = self.notebook_manager.get_full_code()
+        self.send_message('lsp_update', {'code': code})
 
+    def send_message(self, msg_type, payload):
+        message = json.dumps({'type': msg_type, **payload})
+        self.write_message(message)
 
-class AuthHandler(APIHandler):
-    @tornado.web.authenticated
-    # handles the Copilot authentication request
-    # TODO
-    async def post(self):
-        logging.info('Auth handler')
-        self.finish("hello from Auth handler")
+    def on_close(self):
+        # Clean up resources if needed
+        logging.info("WebSocket closed")
+        self.notebook_manager = None
 
 
 def setup_handlers(server_app):
     global logging
     logging = server_app.log
-
     web_app = server_app.web_app
     host_pattern = ".*$"
-    base_url = web_app.settings['base_url']
+    base_url = web_app.settings["base_url"] + "jupyter-copilot"
 
     handlers = [
-        (url_path_join(base_url, 'jupyter-copilot',
-                       '/copilot'), CompletionHandler),
-        (url_path_join(base_url, 'jupyter-copilot',
-                       '/login'), AuthHandler),
+        (url_path_join(base_url, "ws"), NotebookLSPHandler)
     ]
+    logging.info("base url: %s", base_url)
     web_app.add_handlers(host_pattern, handlers)
-    logging.info(
-        f"Jupyter Copilot server handlers activated")
-
-    if (Copilot.token is None):
-        Copilot.setup()
-
-    # Start token refresh thread
-    threading.Thread(target=Copilot.token_thread, daemon=True).start()
