@@ -7,6 +7,8 @@ import tornado
 import json
 import nbformat
 import os
+import subprocess
+from jupyter_copilot.lsp import LSPWrapper
 
 # manages the content of the notebook in memory
 
@@ -139,6 +141,14 @@ class NotebookLSPHandler(WebSocketHandler):
 def setup_handlers(server_app):
     global logging
     logging = server_app.log
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(current_dir)
+    lsp_path = os.path.join(
+        parent_dir, "node_modules", "copilot-node-server", "copilot", "dist", "language-server.js")
+    global lsp
+    lsp = LSPWrapper(["node", lsp_path, "--stdio"], logging)
+
     web_app = server_app.web_app
     host_pattern = ".*$"
     base_url = web_app.settings["base_url"] + "jupyter-copilot"
@@ -147,3 +157,33 @@ def setup_handlers(server_app):
     ]
     logging.info("base url: %s", base_url)
     web_app.add_handlers(host_pattern, handlers)
+
+    lsp.wait(1000)
+
+    init_result = lsp.send_request("initialize", {
+        "capabilities": {"workspace": {"workspaceFolders": True}}
+    })
+
+    # Send `initialized` notification
+    lsp.send_notification("initialized", {})
+
+    # Send `textDocument/didOpen` notification
+    lsp.send_notification("textDocument/didOpen", {
+        "textDocument": {
+            "uri": "file:///home/fakeuser/my-project/test.py",
+            "languageId": "python",
+            "version": 0,
+            "text": "def he\n    \n    print(world)# prints 'hello code' then 'world' in different lines\n"
+        }
+    })
+
+    # Send `getCompletions` request
+    completions = lsp.send_request("getCompletions", {
+        "doc": {
+            "version": 0,
+            "position": {"line": 0, "character": 7},
+            "uri": "file:///home/fakeuser/my-project/test.py"
+        }
+    })
+
+    logging.info(completions)
