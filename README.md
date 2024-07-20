@@ -104,33 +104,60 @@ folder is located. Then you can remove the symlink named `jupyter_copilot` withi
 
 ### Layout and structure
 
-The extension has two parts, the frontend that runs in the notebook which is located in `/src`, and the backend server located in `/jupyter_copilot`. The that way Jupyter works is it has a frontend notebook in the browser, then code is run by sending an API request to another server running locally which returns the code output.
+There a tutorial [here](https://jupyterlab.readthedocs.io/en/latest/extension/extension_tutorial.html) which should have everything you need to make extensions.
 
-### `handlers.py`
+The extension has two parts, the frontend that runs in the notebook which is located in `/src`, and the backend server located in `/jupyter_copilot`. The that way Jupyter works is it has a frontend notebook in the browser, then a local server that the notebook can make requests to.
 
-This file is the code for the server the extension will be running on. This server runs locally and will actually get the copilot completions for the frontend. Its base API route is at `http://localhost:8888/jupyter-copilot` (i think) and the only endpoint so far is `/copilot` which sends the snippet to GitHub copilot and returns the completion.
+![](./imgs/diagram.png)
 
-Whenever you the `jupyter lab` command, that output of that are the logs from the local Jupyter servers, which includes the one for our extension. Instead of printing to debug, instead call `logging.info`, then the output will be visible in that terminal.
+At a high level there are three parts, the extension frontend which runs in the notebook, the extension local server that handles logic and processes, and the Copilot LSP server which actually creates the Copilot completions.
 
-![./imgs/output.png](./imgs/output.png)
+The frontend and local server are connected to each other via websocket so they can communicate with each other. Whenever changes in a notebook are made or a completion should be generated the frontend will send a message to the local server to do that.
 
-This extension uses the real GitHub copilot API and requires you to sign into GitHub. This happens using native Github authentication, however this happens unprompted on startup and hangs everything since I just copied and pasted the code, which is not what we want. Once signing in the copilot token is stored in `.copilot_token` in the local directory (which I gitignored) and requests to GitHub Copilot can be made using that.
+The purpose of the local server is to keep track of updates from the frontend, and communicate with the LSP server. When the frontend wants a completion the local server will forward it to the LSP and send the result back to the frontend.
 
-![login](./imgs/login.png)
+The node.js copilot server is a LSP server that will actually invoke GitHub Copilot endpoints. I did not write it, and it is contained in a [node package](https://www.npmjs.com/package/copilot-node-server?activeTab=dependents), and was taken from the vim implementation of copilot.
 
-The original code for the Copilot server can be found [here](https://github.com/B00TK1D/copilot-api) and has some more information if you need it.
+## `src/`
 
-**When you make changes to this file `npm run watch` will not detect the change, so you need to restart the Jupyter instance in the terminal to see changes take effect**
-
-### `index.ts` `handler.ts`
-
-This is the frontend code that will be running in the notebook on our browser. `handler.ts` is a wrapped around HTTP requests to our server and shouldn't need to be changed. `makePostRequest` sends an HTTP post request which is that the local copilot server is configured to accept. The code in `index.ts` is the main code for out extension, and runs in the browser, so all print statements will be in the browser console. [This tutorial](https://jupyterlab.readthedocs.io/en/stable/extension/extension_tutorial.html) has a detailed guide on working with the notebook and making new elements and is something idk how to do.
+This is where all the frontend code lives. In `index.js` is the main code and event listeners, that listen for changes in notebook such as content change, adding and deleting cells, and opening and closing notebooks. When one of these events happens there's some logic that needs to be send to the local server, the interface with the local server is in `lsp.ts` which has the relevant methods to send messages to the local server.
 
 ![](./imgs/console.png)
 
-## Task
+Here whenever a cell is added, the frontend sends a message to the local server to update the content from the file that the LSP has stored, then sends a request for a completion at line 2 character 4. The reponse is the output above. This is temporary and the only way to get completions until the logic is implemented.
 
-Instead of randomly calling for GitHub Login, make a notebook command that will start the login process. The command should show the link to navigate to in the notebook as well as the code that you have to enter. This will require adding the command element (should be in the tutorial) and refactoring `handlers.py` to call the `get_token` only when this command is run. This means adding a guard for the `/copilot` route that returns an error if not GitHub is not logged in, and creating a new POST route that will actually invoke the login process.
+```ts
+else if (change.type === 'add') {
+    const content = change.newValues[0].sharedModel.getSource();
+    client.sendCellAdd(change.newIndex, content);
+    // activate the copilot when a new cell is added
+    // this is temporary
+    client.sendUpdateLSPVersion();
+    client.getCopilotCompletion(2, 4);
+}
+```
+
+## `jupyter_copilot`
+
+This is the code for the local server. `handler.py` has the handles any websocket messages from the frontend through a queue as to not break stuff. The handling of websocket messages is done in `NotebookLSPHandler`. There is another class `NotebookHandler` which creates an in-memory representation of the code from a notebook. This works by having an array for each code block, then indexing into the array and changing its content when theres an update. There is a single instance of this class and all updates in `handlers.py` update the instantiated class. This class will also make calls communicate with the LSP.
+
+The actual node.js Copilot LSP server is spawned in as a process in `lsp.py`. The server is located in `node_modules/copilot-node-server/dist/copilot/language-server.js` and is spawned as. `lsp.py` provides an interface to communicate with this LSP server, and is basically done and not important.
+
+Whenever you the `jupyter lab` command, that output of that are the logs from the local Jupyter servers, which includes the one for our extension. Instead of printing to debug, instead call `logging.info`, then the output will be visible in that terminal.
+
+![](./imgs/terminal.png)
+
+Stuff prepended with _payload_ and _jsonrpc_ is the output from the language server
+
+**When you make changes to this folder `npm run watch` will not detect the change, so you need to restart the Jupyter instance in the terminal to see changes take effect**
+
+## TODO
+
+- There is no way to get authenticated with GitHub at the moment. I have no idea how the LSP server handles authentication, but it uses the same scheme as the Copilot.vim plugin which is why it works for me. This [stack overflow](https://stackoverflow.com/a/77659136) perfectly explains it and tells you exactly where to find the implementation of it. There should be a command in the command palette that when run, signs the user in through GitHub with the authentication code. This will require making a new UI element, and a new HTTP handler called `login` or something on the local python server.
+- There is no logic to actually programatically invoke the completions yet. Ideally, but I think the easiest think to do currently would be to have it run after a keyword press "." "\_" "," etc... and after the user doesn't move for ~3ish seconds.
+- There should be a setting somewhere to deactivate the plugin.
+- The text does not actually show in the notebook yet, only in the console. Find a way to show the ghost text and have tab to put the text in.
+- I don't think Copilot generates multiple lines, and the way it does it is by constantly appending completions until the output is empty. Find some way to easily do this to get the full output.
 
 ### Packaging the extension
 

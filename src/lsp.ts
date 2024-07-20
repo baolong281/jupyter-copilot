@@ -58,7 +58,7 @@ class NotebookLSPClient {
   // TODO
   private sendToLSP(code: string) {
     // Implement LSP communication here
-    console.log('Sending to LSP:', code);
+    console.log('NotebookHandler current representation:\n', code);
   }
 
   // cleans up the socket connection
