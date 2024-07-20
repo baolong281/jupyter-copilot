@@ -173,6 +173,7 @@ class NotebookLSPHandler(WebSocketHandler):
         response = self.notebook_manager.request_completion(
             data['cell_id'],
             data['line'], data['character'])
+        response['req_id'] = data['req_id']
         await self.send_message('completion', response)
 
     async def handle_sync_request(self):

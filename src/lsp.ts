@@ -4,8 +4,25 @@
     LSP server and listens for messages. It also sends messages to the LSP
     server when a cell is updated in the notebook frontend.
 */
+
+interface Completion {
+  displayText: string;
+  docVersion: number;
+  position: { line: number; character: number };
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  text: string;
+  uuid: string;
+}
+
 class NotebookLSPClient {
   private socket: WebSocket;
+  private pendingCompletions: Map<
+    string,
+    { resolve: (value: any) => void; reject: (reason?: any) => void }
+  > = new Map();
 
   constructor(notebookPath: string, wsUrl: string) {
     wsUrl = `${wsUrl}?path=${encodeURI(notebookPath)}`;
@@ -21,6 +38,13 @@ class NotebookLSPClient {
       case 'sync_response':
       case 'lsp_update':
         this.sendToLSP(data.code);
+        break;
+      case 'completion':
+        const pendingCompletion = this.pendingCompletions.get(data.req_id);
+        if (pendingCompletion) {
+          pendingCompletion.resolve(data.completions);
+          this.pendingCompletions.delete(data.req_id);
+        }
         break;
       default:
         console.log('Unknown message type:', data);
@@ -47,11 +71,29 @@ class NotebookLSPClient {
     this.sendMessage('update_lsp_version', {});
   }
 
-  public getCopilotCompletion(cell: number, line: number, character: number) {
-    this.sendMessage('get_completion', {
-      cell_id: cell,
-      line: line,
-      character: character
+  public async getCopilotCompletion(
+    cell: number,
+    line: number,
+    character: number
+  ): Promise<Completion[]> {
+    return new Promise((resolve, reject) => {
+      const requestId = `${cell}-${line}-${character}-${Date.now()}`;
+      this.pendingCompletions.set(requestId, { resolve, reject });
+
+      this.sendMessage('get_completion', {
+        req_id: requestId,
+        cell_id: cell,
+        line: line,
+        character: character
+      });
+
+      // add a timeout to reject the promise if no response is received
+      setTimeout(() => {
+        if (this.pendingCompletions.has(requestId)) {
+          this.pendingCompletions.delete(requestId);
+          reject(new Error('Completion request timed out'));
+        }
+      }, 10000); // 10 seconds timeout
     });
   }
 

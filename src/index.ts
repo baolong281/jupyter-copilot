@@ -15,21 +15,52 @@ import {
   IInlineCompletionContext,
   CompletionHandler
 } from '@jupyterlab/completer';
+import { CodeEditor } from '@jupyterlab/codeeditor';
 
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
   readonly identifier = 'jupyter_copilot:provider';
+  lastTime: number;
+  notebookClients: Map<string, NotebookLSPClient>;
+
+  constructor(notebookClients: Map<string, NotebookLSPClient>) {
+    this.notebookClients = notebookClients;
+    this.lastTime = Date.now();
+  }
+
   async fetch(
     request: CompletionHandler.IRequest,
     context: IInlineCompletionContext
   ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
-    console.log('Request:', request, 'Context:', context);
-    const items: IInlineCompletionItem[] = [
-      {
-        insertText: 'skibidi toilet',
+    if (Date.now() - this.lastTime < 500) {
+      this.lastTime = Date.now();
+      return { items: [] };
+    }
+    this.lastTime = Date.now();
+
+    console.log('Fetching completions');
+
+    const editor = (context as any).editor as CodeEditor.IEditor;
+    const cell = (context.widget as any)._content._activeCellIndex;
+    const client = this.notebookClients.get(
+      (context.widget as any).context._path
+    );
+
+    const cursor = editor?.getCursorPosition();
+    const { line, column } = cursor;
+
+    client?.sendUpdateLSPVersion();
+
+    const items: IInlineCompletionItem[] = [];
+
+    const completions = await client?.getCopilotCompletion(cell, line, column);
+    completions?.forEach(completion => {
+      items.push({
+        insertText: completion.displayText,
         isIncomplete: false
-      }
-    ];
+      });
+    });
+
     return { items };
   }
 }
@@ -51,61 +82,21 @@ const plugin: JupyterFrontEndPlugin<void> = {
   ) => {
     console.log('JupyterLab extension jupyter_copilot is activated!');
 
-    const command = 'jupyter_copilot:completion';
     const noteBookClients = new Map<string, NotebookLSPClient>();
 
-    const provider = new CopilotInlineProvider();
+    const provider = new CopilotInlineProvider(noteBookClients);
     providerManager.registerInlineProvider(provider);
 
-    console.log(provider, providerManager);
-
-    const getCompletionAtCursor = async () => {
-      const notebook = notebookTracker.currentWidget;
-      if (!notebook) {
-        console.log('No active notebook');
-        return;
-      }
-      // const client = noteBookClients.get(notebook.context.path);
-      // // print character position
-      // const cursor = notebook.content.activeCell?.editor?.getCursorPosition();
-      // if (cursor) {
-      //   const { line, column } = cursor;
-      //   console.log('Active cell id:', notebook.content.activeCellIndex);
-      //   console.log(
-      //     `Current line: ${line}, Current character position: ${column}`
-      //   );
-      //   client?.sendUpdateLSPVersion();
-      //   client?.getCopilotCompletion(
-      //     notebook.content.activeCellIndex,
-      //     line,
-      //     column
-      //   );
-      // }
-    };
-
-    app.commands.addCommand(command, {
-      label: 'Copilot Completion',
-      execute: () => {
-        getCompletionAtCursor();
-      }
-    });
-
-    app.commands.addKeyBinding({
-      command,
-      keys: ['Ctrl J'],
-      selector: '.jp-Notebook'
-    });
-
-    // if (settingRegistry) {
-    //   settingRegistry
-    //     .load(plugin.id)
-    //     .then(settings => {
-    //       console.log('jupyter_copilot settings loaded:', settings.composite);
-    //     })
-    //     .catch(reason => {
-    //       console.error('Failed to load settings for jupyter_copilot.', reason);
-    //     });
-    // }
+    if (settingRegistry) {
+      settingRegistry
+        .load(plugin.id)
+        .then(settings => {
+          console.log('jupyter_copilot settings loaded:', settings.composite);
+        })
+        .catch(reason => {
+          console.error('Failed to load settings for jupyter_copilot.', reason);
+        });
+    }
 
     const settings = ServerConnection.makeSettings();
     // notebook tracker is used to keep track of the notebooks that are open
