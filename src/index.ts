@@ -7,6 +7,32 @@ import { INotebookTracker } from '@jupyterlab/notebook';
 import { ServerConnection } from '@jupyterlab/services';
 import { URLExt } from '@jupyterlab/coreutils';
 import { NotebookLSPClient } from './lsp';
+import {
+  ICompletionProviderManager,
+  IInlineCompletionItem,
+  IInlineCompletionList,
+  IInlineCompletionProvider,
+  IInlineCompletionContext,
+  CompletionHandler
+} from '@jupyterlab/completer';
+
+class CopilotInlineProvider implements IInlineCompletionProvider {
+  readonly name = 'GitHub Copilot';
+  readonly identifier = 'jupyter_copilot:provider';
+  async fetch(
+    request: CompletionHandler.IRequest,
+    context: IInlineCompletionContext
+  ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
+    console.log('Request:', request, 'Context:', context);
+    const items: IInlineCompletionItem[] = [
+      {
+        insertText: 'skibidi toilet',
+        isIncomplete: false
+      }
+    ];
+    return { items };
+  }
+}
 
 /**
  * Initialization data for the jupyter_copilot extension.
@@ -16,10 +42,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
   description: 'GitHub Copilot for Jupyter',
   autoStart: true,
   optional: [ISettingRegistry],
-  requires: [INotebookTracker],
+  requires: [INotebookTracker, ICompletionProviderManager],
   activate: (
     app: JupyterFrontEnd,
     notebookTracker: INotebookTracker,
+    providerManager: ICompletionProviderManager,
     settingRegistry: ISettingRegistry | null
   ) => {
     console.log('JupyterLab extension jupyter_copilot is activated!');
@@ -27,28 +54,33 @@ const plugin: JupyterFrontEndPlugin<void> = {
     const command = 'jupyter_copilot:completion';
     const noteBookClients = new Map<string, NotebookLSPClient>();
 
+    const provider = new CopilotInlineProvider();
+    providerManager.registerInlineProvider(provider);
+
+    console.log(provider, providerManager);
+
     const getCompletionAtCursor = async () => {
       const notebook = notebookTracker.currentWidget;
       if (!notebook) {
         console.log('No active notebook');
         return;
       }
-      const client = noteBookClients.get(notebook.context.path);
-      // print character position
-      const cursor = notebook.content.activeCell?.editor?.getCursorPosition();
-      if (cursor) {
-        const { line, column } = cursor;
-        console.log('Active cell id:', notebook.content.activeCellIndex);
-        console.log(
-          `Current line: ${line}, Current character position: ${column}`
-        );
-        client?.sendUpdateLSPVersion();
-        client?.getCopilotCompletion(
-          notebook.content.activeCellIndex,
-          line,
-          column
-        );
-      }
+      // const client = noteBookClients.get(notebook.context.path);
+      // // print character position
+      // const cursor = notebook.content.activeCell?.editor?.getCursorPosition();
+      // if (cursor) {
+      //   const { line, column } = cursor;
+      //   console.log('Active cell id:', notebook.content.activeCellIndex);
+      //   console.log(
+      //     `Current line: ${line}, Current character position: ${column}`
+      //   );
+      //   client?.sendUpdateLSPVersion();
+      //   client?.getCopilotCompletion(
+      //     notebook.content.activeCellIndex,
+      //     line,
+      //     column
+      //   );
+      // }
     };
 
     app.commands.addCommand(command, {
@@ -64,16 +96,16 @@ const plugin: JupyterFrontEndPlugin<void> = {
       selector: '.jp-Notebook'
     });
 
-    if (settingRegistry) {
-      settingRegistry
-        .load(plugin.id)
-        .then(settings => {
-          console.log('jupyter_copilot settings loaded:', settings.composite);
-        })
-        .catch(reason => {
-          console.error('Failed to load settings for jupyter_copilot.', reason);
-        });
-    }
+    // if (settingRegistry) {
+    //   settingRegistry
+    //     .load(plugin.id)
+    //     .then(settings => {
+    //       console.log('jupyter_copilot settings loaded:', settings.composite);
+    //     })
+    //     .catch(reason => {
+    //       console.error('Failed to load settings for jupyter_copilot.', reason);
+    //     });
+    // }
 
     const settings = ServerConnection.makeSettings();
     // notebook tracker is used to keep track of the notebooks that are open
