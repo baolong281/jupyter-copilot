@@ -1,4 +1,6 @@
 import asyncio
+import time
+from typing import Any, Dict, Optional
 from tornado.ioloop import IOLoop
 from jupyter_server.base.handlers import APIHandler
 from tornado.websocket import WebSocketHandler
@@ -19,6 +21,7 @@ class NotebookManager:
         # keep all the code in an array of strings so that we can easily update the content of a cell
         # when a cell is updated, we update the corresponding string in this array
         # notebook_cells: string[]
+        self.document_version = 0
         self.notebook_cells = self.load_notebook()
         logging.info(self.notebook_cells)
 
@@ -31,6 +34,17 @@ class NotebookManager:
         with open(self.path, 'r') as f:
             nb = nbformat.read(f, as_version=4)
         code = self.extract_code_cells(nb)
+
+        logging.info("Sending open signal to LSP")
+        lsp_client.send_notification("textDocument/didOpen", {
+            "textDocument": {
+                "uri": f"file:///{self.path}",
+                "languageId": "python",
+                "version": self.document_version,
+                "text": "".join(code)
+            }
+        })
+
         return code
 
     # extract code cells from a notebook, iterate through all cells then put the content in the code cells into a list
@@ -39,7 +53,6 @@ class NotebookManager:
 
     # deletes a cell from the array
     def delete_cell(self, cell_id):
-        logging.info(f"Deleting cell {cell_id}")
         if 0 <= cell_id < len(self.notebook_cells):
             self.notebook_cells.pop(cell_id)
         else:
@@ -61,6 +74,7 @@ class NotebookManager:
     # index into array and update the content of a cell
     def update_cell(self, cell_id, content):
         logging.info(f"Updating cell {cell_id} with content: {content}")
+        logging.info(self.notebook_cells)
         if 0 <= cell_id < len(self.notebook_cells):
             self.notebook_cells[cell_id] = content
         else:
@@ -68,6 +82,43 @@ class NotebookManager:
 
     def get_full_code(self):
         return "\n\n".join(self.notebook_cells)
+
+    # sends full code to lsp server
+    def send_full_update(self):
+        self.document_version += 1
+        lsp_client.send_notification("textDocument/didChange", {
+            "textDocument": {
+                "uri": f"file:///{self.path}",
+                "version": self.document_version
+            },
+            "contentChanges": [{"text": self.get_full_code()}]
+        })
+        logging.info("LSP code version updated")
+
+    def request_completion(self, line: int, character: int) -> Dict[str, Any]:
+        response = lsp_client.send_request("getCompletions", {
+            "doc": {
+                "uri": f"file:///{self.path}",
+                "position": {"line": line, "character": character},
+                "version": self.document_version
+            }
+        })
+        return response
+
+    def _position_to_lsp_position(self, text: str, position: int):
+        lines = text[:position].split('\n')
+        return {
+            "line": len(lines) - 1,
+            "character": len(lines[-1])
+        }
+
+    def send_close_signal(self):
+        logging.info("Sending close signal to LSP")
+        lsp_client.send_notification("textDocument/didClose", {
+            "textDocument": {
+                "uri": f"file:///{self.path}"
+            }
+        })
 
 
 class NotebookLSPHandler(WebSocketHandler):
@@ -95,12 +146,15 @@ class NotebookLSPHandler(WebSocketHandler):
     async def process_message_queue(self):
         while True:
             try:
-                logging.info("q info %s", self.message_queue._format())
                 data = await self.message_queue.get()
                 if data['type'] == 'cell_update':
                     await self.handle_cell_update(data)
                 elif data['type'] == 'cell_add':
                     await self.handle_cell_add(data)
+                elif data['type'] == 'get_completion':
+                    await self.handle_completion_request(data)
+                elif data['type'] == 'update_lsp_version':
+                    await self.handle_update_lsp_version()
                 elif data['type'] == 'cell_delete':
                     await self.handle_cell_delete(data)
                 elif data['type'] == 'sync_request':
@@ -110,6 +164,14 @@ class NotebookLSPHandler(WebSocketHandler):
                 logging.error(f"Error processing message: {e}")
             finally:
                 self.message_queue.task_done()
+
+    async def handle_update_lsp_version(self):
+        self.notebook_manager.send_full_update()
+
+    async def handle_completion_request(self, data):
+        response = self.notebook_manager.request_completion(
+            data['line'], data['character'])
+        await self.send_message('completion', response)
 
     async def handle_sync_request(self):
         code = self.notebook_manager.get_full_code()
@@ -135,6 +197,7 @@ class NotebookLSPHandler(WebSocketHandler):
 
     def on_close(self):
         logging.info("WebSocket closed")
+        self.notebook_manager.send_close_signal()
         self.notebook_manager = None
 
 
@@ -142,12 +205,8 @@ def setup_handlers(server_app):
     global logging
     logging = server_app.log
 
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(current_dir)
-    lsp_path = os.path.join(
-        parent_dir, "node_modules", "copilot-node-server", "copilot", "dist", "language-server.js")
-    global lsp
-    lsp = LSPWrapper(["node", lsp_path, "--stdio"], logging)
+    global lsp_client
+    lsp_client = LSPWrapper(logging)
 
     web_app = server_app.web_app
     host_pattern = ".*$"
@@ -158,32 +217,11 @@ def setup_handlers(server_app):
     logging.info("base url: %s", base_url)
     web_app.add_handlers(host_pattern, handlers)
 
-    lsp.wait(1000)
+    lsp_client.wait(1000)
 
-    init_result = lsp.send_request("initialize", {
+    init_result = lsp_client.send_request("initialize", {
         "capabilities": {"workspace": {"workspaceFolders": True}}
     })
 
     # Send `initialized` notification
-    lsp.send_notification("initialized", {})
-
-    # Send `textDocument/didOpen` notification
-    lsp.send_notification("textDocument/didOpen", {
-        "textDocument": {
-            "uri": "file:///home/fakeuser/my-project/test.py",
-            "languageId": "python",
-            "version": 0,
-            "text": "def he\n    \n    print(world)# prints 'hello code' then 'world' in different lines\n"
-        }
-    })
-
-    # Send `getCompletions` request
-    completions = lsp.send_request("getCompletions", {
-        "doc": {
-            "version": 0,
-            "position": {"line": 0, "character": 7},
-            "uri": "file:///home/fakeuser/my-project/test.py"
-        }
-    })
-
-    logging.info(completions)
+    lsp_client.send_notification("initialized", {})

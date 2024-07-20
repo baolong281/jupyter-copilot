@@ -58,15 +58,27 @@ const plugin: JupyterFrontEndPlugin<void> = {
           } else if (change.type === 'add') {
             const content = change.newValues[0].sharedModel.getSource();
             client.sendCellAdd(change.newIndex, content);
+            // activate the copilot when a new cell is added
+            // this is temporary
+            client.sendUpdateLSPVersion();
+            client.getCopilotCompletion(2, 4);
           }
         });
 
         // send the cell content to the LSP server when the current cell is updated
-        // TODO: logic for when cells are swapped
         notebook.content.activeCellChanged.connect((_, cell) => {
           cell?.model.contentChanged.connect(cell => {
             const content = cell.sharedModel.getSource();
             client.sendCellUpdate(notebook.content.activeCellIndex, content);
+
+            const cursor =
+              notebook.content.activeCell?.editor?.getCursorPosition();
+            if (cursor) {
+              const { line, column } = cursor;
+              console.log(
+                `Current line: ${line}, Current character position: ${column}`
+              );
+            }
           });
         });
       });

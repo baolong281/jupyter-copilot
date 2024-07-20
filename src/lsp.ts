@@ -22,7 +22,8 @@ class NotebookLSPClient {
       case 'lsp_update':
         this.sendToLSP(data.code);
         break;
-      // Handle other message types
+      default:
+        console.log('Unknown message type:', data);
     }
   }
 
@@ -39,6 +40,15 @@ class NotebookLSPClient {
 
   public sendCellAdd(cellID: number, content: string) {
     this.sendMessage('cell_add', { cell_id: cellID, content: content });
+  }
+
+  // sends a message to the server which will then send the updated code to the lsp server
+  public sendUpdateLSPVersion() {
+    this.sendMessage('update_lsp_version', {});
+  }
+
+  public getCopilotCompletion(line: number, character: number) {
+    this.sendMessage('get_completion', { line: line, character: character });
   }
 
   private sendMessage(type: string, payload: any) {

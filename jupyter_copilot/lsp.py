@@ -12,14 +12,18 @@ import os
 
 
 class LSPWrapper:
-    def __init__(self, lsp_command: list, logger):
-        logger.info(f"Initializing LSPWrapper with command: {
-            ' '.join(lsp_command)}")
+    def __init__(self, logger):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        lsp_path = os.path.join(
+            parent_dir, "node_modules", "copilot-node-server", "copilot", "dist", "language-server.js")
+        logger.info(f"Initializing Copilot LSP server in: {
+            ''.join(lsp_path)}")
         self.logger = logger
         try:
             # start the process and throw an error if it fails
             self.process = subprocess.Popen(
-                lsp_command,
+                ["node", lsp_path, "--stdio"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -140,8 +144,27 @@ class LSPWrapper:
         self.reject_map.pop(self.request_id, None)
         return response['result']
 
+    # get the completion from copilot
+    def get_completion(self, text, line, character, file):
+        result = self.send_request("textDocument/completion", {
+            "textDocument": {
+                "uri": f"file:///{file}"
+            },
+            "position": {
+                "line": line,
+                "character": character
+            }
+        })
+
+        if len(result) == 0:
+            return None
+
+        result = result[0]
+        return result
+
     # when we get a message, we process it
     # if it has an id, then we call the resolve or reject callback
+
     def _handle_received_payload(self, payload: dict):
         self.logger.info("payload: %s", payload)
         if "id" in payload:
@@ -155,7 +178,7 @@ class LSPWrapper:
                 if reject:
                     reject(payload["error"])
 
-    @staticmethod
+    @ staticmethod
     def wait(ms: int):
         print(f"Waiting for {ms} ms")
         time.sleep(ms / 1000)
