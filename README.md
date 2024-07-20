@@ -124,18 +124,7 @@ This is where all the frontend code lives. In `index.js` is the main code and ev
 
 ![](./imgs/console.png)
 
-Here whenever a cell is added, the frontend sends a message to the local server to update the content from the file that the LSP has stored, then sends a request for a completion at line 2 character 4. The reponse is the output above. This is temporary and the only way to get completions until the logic is implemented.
-
-```ts
-else if (change.type === 'add') {
-    const content = change.newValues[0].sharedModel.getSource();
-    client.sendCellAdd(change.newIndex, content);
-    // activate the copilot when a new cell is added
-    // this is temporary
-    client.sendUpdateLSPVersion();
-    client.getCopilotCompletion(2, 4);
-}
-```
+Whenever a cell is added, swapped, removed, or changed the frontend will send a message to the local server to update its representation of the notebook. Currently `Ctrl+J` will call a completion for whever the cursor is located by calling the `getCompletionAtCursorMethod`.
 
 ## `jupyter_copilot`
 
@@ -153,11 +142,11 @@ Stuff prepended with _payload_ and _jsonrpc_ is the output from the language ser
 
 ## TODO
 
-- There is no way to get authenticated with GitHub at the moment. I have no idea how the LSP server handles authentication, but it uses the same scheme as the Copilot.vim plugin which is why it works for me. This [stack overflow](https://stackoverflow.com/a/77659136) perfectly explains it and tells you exactly where to find the implementation of it. There should be a command in the command palette that when run, signs the user in through GitHub with the authentication code. This will require making a new UI element, and a new HTTP handler called `login` or something on the local python server.
+- There is no way to get authenticated with GitHub at the moment. I have no idea how the LSP server handles authentication, but it uses the same scheme as the Copilot.vim plugin which is why it works for me. This [stack overflow](https://stackoverflow.com/a/77659136) perfectly explains it and tells you exactly where to find the implementation of it. There should be a command in the command palette that when run, signs the user in through GitHub with the authentication code. This will require making a new UI element, and a new HTTP handler called `login` or something on the local python server. #update Authentication happens by sending a Request to the LSP server with the message, "signInConfirm" "signInInitiate" "signInWithGithubToken" or "signOut". All the code to send these messages is there, this should be easy to do.
+
 - There is no logic to actually programatically invoke the completions yet. Ideally, but I think the easiest think to do currently would be to have it run after a keyword press "." "\_" "," etc... and after the user doesn't move for ~3ish seconds.
 - There should be a setting somewhere to deactivate the plugin.
 - The text does not actually show in the notebook yet, only in the console. Find a way to show the ghost text and have tab to put the text in.
-- I don't think Copilot generates multiple lines, and the way it does it is by constantly appending completions until the output is empty. Find some way to easily do this to get the full output.
 
 ### Packaging the extension
 
