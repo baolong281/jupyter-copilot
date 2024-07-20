@@ -57,7 +57,7 @@
     },
     "dependencies": {
         "@jupyterlab/application": "^4.2.3",
-        "@jupyterlab/apputils": "^4.3.3",
+        "@jupyterlab/apputils": "^4.3.4",
         "@jupyterlab/codemirror": "^4.2.4",
         "@jupyterlab/coreutils": "^6.0.0",
         "@jupyterlab/fileeditor": "^4.2.4",

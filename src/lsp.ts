@@ -47,8 +47,12 @@ class NotebookLSPClient {
     this.sendMessage('update_lsp_version', {});
   }
 
-  public getCopilotCompletion(line: number, character: number) {
-    this.sendMessage('get_completion', { line: line, character: character });
+  public getCopilotCompletion(cell: number, line: number, character: number) {
+    this.sendMessage('get_completion', {
+      cell_id: cell,
+      line: line,
+      character: character
+    });
   }
 
   private sendMessage(type: string, payload: any) {

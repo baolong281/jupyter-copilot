@@ -60,7 +60,6 @@ class NotebookManager:
 
     # insert a cell into the array
     def add_cell(self, cell_id, content):
-        logging.info(f"Adding cell {cell_id} with content: {content}")
         if 0 <= cell_id <= len(self.notebook_cells):
             self.notebook_cells.insert(cell_id, content)
         elif cell_id > len(self.notebook_cells):
@@ -73,7 +72,6 @@ class NotebookManager:
 
     # index into array and update the content of a cell
     def update_cell(self, cell_id, content):
-        logging.info(f"Updating cell {cell_id} with content: {content}")
         logging.info(self.notebook_cells)
         if 0 <= cell_id < len(self.notebook_cells):
             self.notebook_cells[cell_id] = content
@@ -86,16 +84,19 @@ class NotebookManager:
     # sends full code to lsp server
     def send_full_update(self):
         self.document_version += 1
+        code = self.get_full_code()
         lsp_client.send_notification("textDocument/didChange", {
             "textDocument": {
                 "uri": f"file:///{self.path}",
                 "version": self.document_version
             },
-            "contentChanges": [{"text": self.get_full_code()}]
+            "contentChanges": [{"text": code}]
         })
-        logging.info("LSP code version updated")
+        logging.info("LSP code version %d updates with %s", self.document_version, code)
 
-    def request_completion(self, line: int, character: int) -> Dict[str, Any]:
+    def request_completion(self, cell_id: int, line: int, character: int) -> Dict[str, Any]:
+        line = self._get_absolute_line_num(cell_id, line)
+        logging.info(f"Requesting completion for line {line} character {character}")
         response = lsp_client.send_request("getCompletions", {
             "doc": {
                 "uri": f"file:///{self.path}",
@@ -103,14 +104,14 @@ class NotebookManager:
                 "version": self.document_version
             }
         })
+
         return response
 
-    def _position_to_lsp_position(self, text: str, position: int):
-        lines = text[:position].split('\n')
-        return {
-            "line": len(lines) - 1,
-            "character": len(lines[-1])
-        }
+    # given cellid and line of the current cell, return the absolute line number in the code representation
+    # this sort of sucks but it works for now
+    def _get_absolute_line_num(self, cellId: int, line: int) -> int:
+        return sum([len(cell.split('\n')) for cell in self.notebook_cells[:cellId]]) + line + cellId
+
 
     def send_close_signal(self):
         logging.info("Sending close signal to LSP")
@@ -170,6 +171,7 @@ class NotebookLSPHandler(WebSocketHandler):
 
     async def handle_completion_request(self, data):
         response = self.notebook_manager.request_completion(
+            data['cell_id'],
             data['line'], data['character'])
         await self.send_message('completion', response)
 
@@ -223,5 +225,7 @@ def setup_handlers(server_app):
         "capabilities": {"workspace": {"workspaceFolders": True}}
     })
 
+
     # Send `initialized` notification
     lsp_client.send_notification("initialized", {})
+

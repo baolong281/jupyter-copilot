@@ -24,6 +24,46 @@ const plugin: JupyterFrontEndPlugin<void> = {
   ) => {
     console.log('JupyterLab extension jupyter_copilot is activated!');
 
+    const command = 'jupyter_copilot:completion';
+    const noteBookClients = new Map<string, NotebookLSPClient>();
+
+    const getCompletionAtCursor = async () => {
+      const notebook = notebookTracker.currentWidget;
+      if (!notebook) {
+        console.log('No active notebook');
+        return;
+      }
+      const client = noteBookClients.get(notebook.context.path);
+      // print character position
+      const cursor = notebook.content.activeCell?.editor?.getCursorPosition();
+      if (cursor) {
+        const { line, column } = cursor;
+        console.log('Active cell id:', notebook.content.activeCellIndex);
+        console.log(
+          `Current line: ${line}, Current character position: ${column}`
+        );
+        client?.sendUpdateLSPVersion();
+        client?.getCopilotCompletion(
+          notebook.content.activeCellIndex,
+          line,
+          column
+        );
+      }
+    };
+
+    app.commands.addCommand(command, {
+      label: 'Copilot Completion',
+      execute: () => {
+        getCompletionAtCursor();
+      }
+    });
+
+    app.commands.addKeyBinding({
+      command,
+      keys: ['Ctrl J'],
+      selector: '.jp-Notebook'
+    });
+
     if (settingRegistry) {
       settingRegistry
         .load(plugin.id)
@@ -43,10 +83,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
       notebook.context.ready.then(() => {
         const wsURL = URLExt.join(settings.wsUrl, 'jupyter-copilot', 'ws');
         const client = new NotebookLSPClient(notebook.context.path, wsURL);
+        noteBookClients.set(notebook.context.path, client);
 
         // run cleanup when notebook is closed
         notebook.disposed.connect(() => {
           client.dispose();
+          noteBookClients.delete(notebook.context.path);
           console.log('Notebook disposed:', notebook.context.path);
         });
 
@@ -61,7 +103,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
             // activate the copilot when a new cell is added
             // this is temporary
             client.sendUpdateLSPVersion();
-            client.getCopilotCompletion(2, 4);
+            // print active cell id
+            console.log('Active cell id:', notebook.content.activeCellIndex);
+            // client.getCopilotCompletion(1, 4);
           }
         });
 
@@ -70,15 +114,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
           cell?.model.contentChanged.connect(cell => {
             const content = cell.sharedModel.getSource();
             client.sendCellUpdate(notebook.content.activeCellIndex, content);
-
-            const cursor =
-              notebook.content.activeCell?.editor?.getCursorPosition();
-            if (cursor) {
-              const { line, column } = cursor;
-              console.log(
-                `Current line: ${line}, Current character position: ${column}`
-              );
-            }
           });
         });
       });
