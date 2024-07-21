@@ -143,10 +143,9 @@ Stuff prepended with _payload_ and _jsonrpc_ is the output from the language ser
 ## TODO
 
 - There is no way to get authenticated with GitHub at the moment. I have no idea how the LSP server handles authentication, but it uses the same scheme as the Copilot.vim plugin which is why it works for me. This [stack overflow](https://stackoverflow.com/a/77659136) perfectly explains it and tells you exactly where to find the implementation of it. There should be a command in the command palette that when run, signs the user in through GitHub with the authentication code. This will require making a new UI element, and a new HTTP handler called `login` or something on the local python server. #update Authentication happens by sending a Request to the LSP server with the message, "signInConfirm" "signInInitiate" "signInWithGithubToken" or "signOut". All the code to send these messages is there, this should be easy to do.
-
-- There is no logic to actually programatically invoke the completions yet. Ideally, but I think the easiest think to do currently would be to have it run after a keyword press "." "\_" "," etc... and after the user doesn't move for ~3ish seconds.
-- There should be a setting somewhere to deactivate the plugin.
-- The text does not actually show in the notebook yet, only in the console. Find a way to show the ghost text and have tab to put the text in.
+- There should be a setting somewhere to deactivate the plugin
+- Run tests and find bugs
+- Test if it works in regular jupyter and port it
 
 ### Packaging the extension
 
