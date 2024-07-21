@@ -20,31 +20,21 @@ import { CodeEditor } from '@jupyterlab/codeeditor';
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
   readonly identifier = 'jupyter_copilot:provider';
-  lastTime: number;
   notebookClients: Map<string, NotebookLSPClient>;
 
   constructor(notebookClients: Map<string, NotebookLSPClient>) {
     this.notebookClients = notebookClients;
-    this.lastTime = Date.now();
   }
 
   async fetch(
     request: CompletionHandler.IRequest,
     context: IInlineCompletionContext
   ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
-    if (Date.now() - this.lastTime < 2) {
-      this.lastTime = Date.now();
-      return { items: [] };
-    }
-    this.lastTime = Date.now();
-
     console.log('Fetching completions');
 
     const editor = (context as any).editor as CodeEditor.IEditor;
     const cell = (context.widget as any)._content._activeCellIndex;
-    const client = this.notebookClients.get(
-      (context.widget as any).context._path
-    );
+    const client = this.notebookClients.get((context.widget as any).id);
 
     const cursor = editor?.getCursorPosition();
     const { line, column } = cursor;
@@ -84,9 +74,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
   ) => {
     console.log('JupyterLab extension jupyter_copilot is activated!');
 
-    const noteBookClients = new Map<string, NotebookLSPClient>();
+    const notebookClients = new Map<string, NotebookLSPClient>();
 
-    const provider = new CopilotInlineProvider(noteBookClients);
+    const provider = new CopilotInlineProvider(notebookClients);
     providerManager.registerInlineProvider(provider);
     // providerManager.inline?.accept();
 
@@ -126,12 +116,24 @@ const plugin: JupyterFrontEndPlugin<void> = {
       notebook.context.ready.then(() => {
         const wsURL = URLExt.join(settings.wsUrl, 'jupyter-copilot', 'ws');
         const client = new NotebookLSPClient(notebook.context.path, wsURL);
-        noteBookClients.set(notebook.context.path, client);
+        notebookClients.set(notebook.id, client);
+
+        // run whenever a notebook cell updates
+        // annotate type later when i have wifi
+        const onCellUpdate = (cell: any) => {
+          console.log('Sending change...');
+          const content = cell.sharedModel.getSource();
+          client.sendCellUpdate(notebook.content.activeCellIndex, content);
+        };
+
+        // keep the current cell so when can clean up whenever this changes
+        let current_cell = notebook.content.activeCell;
+        current_cell?.model.contentChanged.connect(onCellUpdate);
 
         // run cleanup when notebook is closed
         notebook.disposed.connect(() => {
           client.dispose();
-          noteBookClients.delete(notebook.context.path);
+          notebookClients.delete(notebook.id);
           console.log('Notebook disposed:', notebook.context.path);
         });
 
@@ -143,21 +145,14 @@ const plugin: JupyterFrontEndPlugin<void> = {
           } else if (change.type === 'add') {
             const content = change.newValues[0].sharedModel.getSource();
             client.sendCellAdd(change.newIndex, content);
-            // activate the copilot when a new cell is added
-            // this is temporary
-            client.sendUpdateLSPVersion();
-            // print active cell id
-            console.log('Active cell id:', notebook.content.activeCellIndex);
-            // client.getCopilotCompletion(1, 4);
           }
         });
 
-        // send the cell content to the LSP server when the current cell is updated
+        // whenever active cell changes remove handler then add to new one
         notebook.content.activeCellChanged.connect((_, cell) => {
-          cell?.model.contentChanged.connect(cell => {
-            const content = cell.sharedModel.getSource();
-            client.sendCellUpdate(notebook.content.activeCellIndex, content);
-          });
+          current_cell?.model.contentChanged.disconnect(onCellUpdate);
+          current_cell = cell;
+          current_cell?.model.contentChanged.connect(onCellUpdate);
         });
       });
     });
