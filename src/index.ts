@@ -32,7 +32,7 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
     request: CompletionHandler.IRequest,
     context: IInlineCompletionContext
   ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
-    if (Date.now() - this.lastTime < 500) {
+    if (Date.now() - this.lastTime < 2) {
       this.lastTime = Date.now();
       return { items: [] };
     }
@@ -61,6 +61,8 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
       });
     });
 
+    console.log('Completions:', items);
+
     return { items };
   }
 }
@@ -86,6 +88,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     const provider = new CopilotInlineProvider(noteBookClients);
     providerManager.registerInlineProvider(provider);
+    // providerManager.inline?.accept();
 
     if (settingRegistry) {
       settingRegistry
@@ -97,6 +100,23 @@ const plugin: JupyterFrontEndPlugin<void> = {
           console.error('Failed to load settings for jupyter_copilot.', reason);
         });
     }
+
+    const command = 'jupyter_copilot:completion';
+    app.commands.addCommand(command, {
+      label: 'Copilot Completion',
+      execute: () => {
+        // get id of current notebook panel
+        const notebookPanelId = notebookTracker.currentWidget?.id;
+        console.log('ID of current notebook panel:', notebookPanelId);
+        providerManager.inline?.accept(notebookPanelId || '');
+      }
+    });
+
+    app.commands.addKeyBinding({
+      command,
+      keys: ['Ctrl J'],
+      selector: '.jp-Notebook'
+    });
 
     const settings = ServerConnection.makeSettings();
     // notebook tracker is used to keep track of the notebooks that are open
