@@ -22,6 +22,7 @@ class NotebookManager:
         # when a cell is updated, we update the corresponding string in this array
         # notebook_cells: string[]
         self.document_version = 0
+        self.language = "python"
         self.notebook_cells = self.load_notebook()
         logging.info(self.notebook_cells)
 
@@ -35,11 +36,20 @@ class NotebookManager:
             nb = nbformat.read(f, as_version=4)
         code = self.extract_code_cells(nb)
 
+        # if new notebook, code will be empty so just add empty string
+        if len(code) == 0:
+            code = ['']
+
+        # when a notebook is newly created and never run this information is not available
+        if nb.metadata and nb.metadata.kernelspec:
+            self.language = nb.metadata.kernelspec.language.lower()
+            logging.info("SETTING LANGUAGE TO %s", self.language)
+
         logging.info("Sending open signal to LSP")
         lsp_client.send_notification("textDocument/didOpen", {
             "textDocument": {
                 "uri": f"file:///{self.path}",
-                "languageId": "python",
+                "languageId": self.language,
                 "version": self.document_version,
                 "text": "".join(code)
             }
@@ -67,12 +77,12 @@ class NotebookManager:
             for _ in range(cell_id - len(self.notebook_cells)):
                 self.notebook_cells.append('')
             self.notebook_cells.append(content)
+        logging.info(f"Added cell {cell_id}")
 
-        logging.info(self.notebook_cells)
 
     # index into array and update the content of a cell
     def update_cell(self, cell_id, content):
-        logging.info(self.notebook_cells)
+        logging.info(f"Updating cell {cell_id}")
         if 0 <= cell_id < len(self.notebook_cells):
             self.notebook_cells[cell_id] = content
         else:
@@ -92,11 +102,10 @@ class NotebookManager:
             },
             "contentChanges": [{"text": code}]
         })
-        logging.info("LSP code version %d updates with %s", self.document_version, code)
 
     def request_completion(self, cell_id: int, line: int, character: int) -> Dict[str, Any]:
         line = self._get_absolute_line_num(cell_id, line)
-        logging.info(f"Requesting completion for line {line} character {character}")
+        logging.info(f"Requesting completion for line {line} character {character}, language: {self.language}")
         response = lsp_client.send_request("getCompletions", {
             "doc": {
                 "uri": f"file:///{self.path}",
@@ -122,7 +131,7 @@ class NotebookManager:
         lsp_client.send_notification("textDocument/didOpen", {
             "textDocument": {
                 "uri": new_path,
-                "languageId": "python",
+                "languageId": self.language,
                 "version": self.document_version,
                 "text": self.get_full_code()
             }
@@ -138,6 +147,19 @@ class NotebookManager:
                 "uri": f"file:///{self.path}"
             }
         })
+
+    def set_language(self, language):
+        self.language = language
+        self.send_close_signal( )
+        lsp_client.send_notification("textDocument/didOpen", {
+            "textDocument": {
+                "uri": f"file:///{self.path}",
+                "languageId": self.language,
+                "version": self.document_version,
+                "text": self.get_full_code()
+            }
+        })
+        logging.info(f"Language set to {language}")
 
 
 class NotebookLSPHandler(WebSocketHandler):
@@ -178,8 +200,10 @@ class NotebookLSPHandler(WebSocketHandler):
                     await self.handle_cell_delete(data)
                 elif data['type'] == 'sync_request':
                     await self.handle_sync_request()
-                elif data['type']== 'change_path':
+                elif data['type'] == 'change_path':
                     await self.handler_path_change(data);
+                elif data['type'] == 'set_language':
+                    await self.handle_set_language(data)
 
                 # Add other message types as needed
             except Exception as e:
@@ -192,6 +216,10 @@ class NotebookLSPHandler(WebSocketHandler):
 
     async def handler_path_change(self, data):
         self.notebook_manager.handle_path_change(data['new_path'])
+
+    async def handle_set_language(self, data):
+        self.notebook_manager.set_language(data['language'])
+
 
     async def handle_completion_request(self, data):
         response = self.notebook_manager.request_completion(

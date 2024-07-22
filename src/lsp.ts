@@ -44,6 +44,9 @@ class NotebookLSPClient {
           this.pendingCompletions.delete(data.req_id);
         }
         break;
+      case 'connection_established':
+        console.log('Copilot connected to extension server...');
+        break;
       default:
         console.log('Unknown message type:', data);
     }
@@ -101,6 +104,10 @@ class NotebookLSPClient {
 
   public sendPathChange(newPath: string) {
     this.sendMessage('change_path', { new_path: newPath });
+  }
+
+  public setNotebookLanguage(language: string) {
+    this.sendMessage('set_language', { language: language });
   }
 
   // cleans up the socket connection

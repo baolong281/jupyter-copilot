@@ -44,7 +44,7 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
     // if a request is made within 90ms of the last request, throttle the request
     // but if it is the last request, then make the request
     console.log('time since last request', now - this.lastRequestTime);
-    if (this.requestInProgress || now - this.lastRequestTime < 90) {
+    if (this.requestInProgress || now - this.lastRequestTime < 150) {
       console.log('THROTTLING');
       this.lastRequestTime = now;
 
@@ -93,7 +93,8 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
     const completions = await client?.getCopilotCompletion(cell, line, column);
     completions?.forEach(completion => {
       items.push({
-        insertText: completion.displayText,
+        // sometimes completions have ``` in them, so we remove it
+        insertText: completion.displayText.replace('```', ''),
         isIncomplete: false
       });
     });
@@ -141,6 +142,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
       label: 'Copilot Completion',
       execute: () => {
         // get id of current notebook panel
+        console.log('command executing');
         const notebookPanelId = notebookTracker.currentWidget?.id;
         providerManager.inline?.accept(notebookPanelId || '');
       }
@@ -149,7 +151,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     app.commands.addKeyBinding({
       command,
       keys: ['Ctrl J'],
-      selector: '.jp-Notebook'
+      selector: '.cm-editor'
     });
 
     const settings = ServerConnection.makeSettings();
@@ -162,16 +164,26 @@ const plugin: JupyterFrontEndPlugin<void> = {
         const client = new NotebookLSPClient(notebook.context.path, wsURL);
         notebookClients.set(notebook.id, client);
 
+        notebook.sessionContext.ready.then(() => {
+          notebook.sessionContext.session?.kernel?.info.then(info => {
+            client.setNotebookLanguage(info.language_info.name);
+          });
+        });
+
         // run whenever a notebook cell updates
-        // annotate type later when i have wifi
-        const onCellUpdate = (cell: any) => {
-          const content = cell.sharedModel.getSource();
-          client.sendCellUpdate(notebook.content.activeCellIndex, content);
+        // types are of ISharedCodeCell and CellChange
+        // i cannot import them and i cannot find where they are supposed to be
+        const onCellUpdate = (update: any, change: any) => {
+          // only change if it is a source change
+          if (change.sourceChange) {
+            const content = update.source;
+            client.sendCellUpdate(notebook.content.activeCellIndex, content);
+          }
         };
 
         // keep the current cell so when can clean up whenever this changes
         let current_cell = notebook.content.activeCell;
-        current_cell?.model.contentChanged.connect(onCellUpdate);
+        current_cell?.model.sharedModel.changed.connect(onCellUpdate);
 
         // run cleanup when notebook is closed
         notebook.disposed.connect(() => {
@@ -182,7 +194,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         // notifies the extension server when a cell is added or removed
         // swapping consists of an add and a remove, so this should be sufficient
-        notebook.model?.cells.changed.connect((list, change) => {
+        notebook.model?.cells.changed.connect((_, change) => {
           if (change.type === 'remove') {
             client.sendCellDelete(change.oldIndex);
           } else if (change.type === 'add') {
@@ -197,9 +209,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         // whenever active cell changes remove handler then add to new one
         notebook.content.activeCellChanged.connect((_, cell) => {
-          current_cell?.model.contentChanged.disconnect(onCellUpdate);
+          current_cell?.model.sharedModel.changed.disconnect(onCellUpdate);
           current_cell = cell;
-          current_cell?.model.contentChanged.connect(onCellUpdate);
+          current_cell?.model.sharedModel.changed.connect(onCellUpdate);
         });
       });
     });
