@@ -118,7 +118,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     providerManager: ICompletionProviderManager,
     settingRegistry: ISettingRegistry | null
   ) => {
-    console.log('JupyterLab extension jupyter_copilot is activated!');
+    console.log('Skibid Toilet');
 
     const notebookClients = new Map<string, NotebookLSPClient>();
 
