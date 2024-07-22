@@ -103,6 +103,8 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
     return { items };
   }
 }
+import { ICommandPalette} from '@jupyterlab/apputils';
+
 
 /**
  * Initialization data for the jupyter_copilot extension.
@@ -112,24 +114,23 @@ const plugin: JupyterFrontEndPlugin<void> = {
   description: 'GitHub Copilot for Jupyter',
   autoStart: true,
   optional: [ISettingRegistry],
-  requires: [INotebookTracker, ICompletionProviderManager],
+  requires: [INotebookTracker, ICompletionProviderManager,ICommandPalette],
   activate: (
     app: JupyterFrontEnd,
     notebookTracker: INotebookTracker,
     providerManager: ICompletionProviderManager,
-    settingRegistry: ISettingRegistry | null
+    settingRegistry: ISettingRegistry | null,
+    palette: ICommandPalette,
   ) => {
-    console.log("MAKING POST ")
-    makePostRequest("login", {}).then(data =>{
-      console.log(data);
-    })
-    console.log('Skibid Toilet');
 
+ 
     const notebookClients = new Map<string, NotebookLSPClient>();
 
     const provider = new CopilotInlineProvider(notebookClients);
     providerManager.registerInlineProvider(provider);
     // providerManager.inline?.accept();
+
+    console.log(settingRegistry);
 
     if (settingRegistry) {
       settingRegistry
@@ -158,6 +159,23 @@ const plugin: JupyterFrontEndPlugin<void> = {
       keys: ['Ctrl J'],
       selector: '.cm-editor'
     });
+
+    const commandID = 'Sign In With GitHub';
+    const toggled = false;
+    app.commands.addCommand(commandID, {
+      label: 'Sign In With GitHub',
+      isToggled: () => toggled,
+      isVisible: () => true,
+      isEnabled: () => true,
+      iconClass: 'cpgithub-icon',
+      execute: () => {
+        console.log("MAKING POST ")
+        makePostRequest("signInInitiate", {}).then(data =>{
+          console.log(data);
+        })
+      }
+    });
+    palette.addItem({command: commandID, category: 'GitHub Copilot'}); 
 
     const settings = ServerConnection.makeSettings();
     // notebook tracker is used to keep track of the notebooks that are open

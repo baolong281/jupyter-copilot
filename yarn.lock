@@ -511,7 +511,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@jupyterlab/application@npm:^4.2.3":
+"@jupyterlab/application@npm:^4.2.4":
   version: 4.2.4
   resolution: "@jupyterlab/application@npm:4.2.4"
   dependencies:
@@ -4121,7 +4121,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "jupyter_copilot@workspace:."
   dependencies:
-    "@jupyterlab/application": ^4.2.3
+    "@jupyterlab/application": ^4.2.4
     "@jupyterlab/apputils": ^4.3.4
     "@jupyterlab/builder": ^4.0.0
     "@jupyterlab/codemirror": ^4.2.4
