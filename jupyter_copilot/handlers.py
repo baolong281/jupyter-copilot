@@ -254,6 +254,14 @@ class NotebookLSPHandler(WebSocketHandler):
         self.notebook_manager.send_close_signal()
         self.notebook_manager = None
 
+class AuthHandler(APIHandler):
+    async def post(self):
+        res = lsp_client.send_request("signInInitiate", {})
+        logging.info(res)
+        self.finish(res)
+
+    
+
 
 def setup_handlers(server_app):
     global logging
@@ -266,7 +274,8 @@ def setup_handlers(server_app):
     host_pattern = ".*$"
     base_url = web_app.settings["base_url"] + "jupyter-copilot"
     handlers = [
-        (url_path_join(base_url, "ws"), NotebookLSPHandler)
+        (url_path_join(base_url, "ws"), NotebookLSPHandler),
+        (url_path_join(base_url, "login"), AuthHandler)
     ]
     logging.info("base url: %s", base_url)
     web_app.add_handlers(host_pattern, handlers)

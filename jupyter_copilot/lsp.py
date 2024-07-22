@@ -114,7 +114,7 @@ class LSPWrapper:
             {"id": self.request_id, "method": method, "params": params})
         result = threading.Event()
         response = {}
-
+    
         def resolve(payload):
             response['result'] = payload
             result.set()

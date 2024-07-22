@@ -16,6 +16,7 @@ import {
   CompletionHandler
 } from '@jupyterlab/completer';
 import { CodeEditor } from '@jupyterlab/codeeditor';
+import { makePostRequest } from './handler';
 
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
@@ -118,6 +119,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
     providerManager: ICompletionProviderManager,
     settingRegistry: ISettingRegistry | null
   ) => {
+    console.log("MAKING POST ")
+    makePostRequest("login", {}).then(data =>{
+      console.log(data);
+    })
     console.log('Skibid Toilet');
 
     const notebookClients = new Map<string, NotebookLSPClient>();
