@@ -112,6 +112,24 @@ class NotebookManager:
     def _get_absolute_line_num(self, cellId: int, line: int) -> int:
         return sum([len(cell.split('\n')) for cell in self.notebook_cells[:cellId]]) + line + cellId
 
+    def handle_path_change(self, path):
+        new_path = f"file:///{path}"
+        
+        # send close notification
+        self.send_close_signal()
+
+        # send open notification
+        lsp_client.send_notification("textDocument/didOpen", {
+            "textDocument": {
+                "uri": new_path,
+                "languageId": "python",
+                "version": self.document_version,
+                "text": self.get_full_code()
+            }
+        })
+
+        self.path = path
+
 
     def send_close_signal(self):
         logging.info("Sending close signal to LSP")
@@ -131,8 +149,8 @@ class NotebookLSPHandler(WebSocketHandler):
         IOLoop.current().add_callback(self.process_message_queue)
 
     async def open(self):
-        self.notebook_path = self.get_argument('path', '')
-        self.notebook_manager = NotebookManager(self.notebook_path)
+        notebook_path = self.get_argument('path', '')
+        self.notebook_manager = NotebookManager(notebook_path)
         await self.send_message('connection_established', {})
 
     async def on_message(self, message):
@@ -160,6 +178,9 @@ class NotebookLSPHandler(WebSocketHandler):
                     await self.handle_cell_delete(data)
                 elif data['type'] == 'sync_request':
                     await self.handle_sync_request()
+                elif data['type']== 'change_path':
+                    await self.handler_path_change(data);
+
                 # Add other message types as needed
             except Exception as e:
                 logging.error(f"Error processing message: {e}")
@@ -168,6 +189,9 @@ class NotebookLSPHandler(WebSocketHandler):
 
     async def handle_update_lsp_version(self):
         self.notebook_manager.send_full_update()
+
+    async def handler_path_change(self, data):
+        self.notebook_manager.handle_path_change(data['new_path'])
 
     async def handle_completion_request(self, data):
         response = self.notebook_manager.request_completion(
@@ -186,7 +210,6 @@ class NotebookLSPHandler(WebSocketHandler):
     async def handle_cell_update(self, data):
         self.notebook_manager.update_cell(data['cell_id'], data['content'])
         code = self.notebook_manager.get_full_code()
-        await self.send_message('lsp_update', {'code': code})
 
     async def handle_cell_delete(self, data):
         self.notebook_manager.delete_cell(data['cell_id'])

@@ -121,7 +121,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
         // run whenever a notebook cell updates
         // annotate type later when i have wifi
         const onCellUpdate = (cell: any) => {
-          console.log('Sending change...');
           const content = cell.sharedModel.getSource();
           client.sendCellUpdate(notebook.content.activeCellIndex, content);
         };
@@ -146,6 +145,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
             const content = change.newValues[0].sharedModel.getSource();
             client.sendCellAdd(change.newIndex, content);
           }
+        });
+
+        notebook.context.pathChanged.connect((_, newPath) => {
+          client.sendPathChange(newPath);
         });
 
         // whenever active cell changes remove handler then add to new one

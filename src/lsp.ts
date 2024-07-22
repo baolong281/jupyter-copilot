@@ -36,8 +36,6 @@ class NotebookLSPClient {
     const data = JSON.parse(event.data);
     switch (data.type) {
       case 'sync_response':
-      case 'lsp_update':
-        this.sendToLSP(data.code);
         break;
       case 'completion':
         const pendingCompletion = this.pendingCompletions.get(data.req_id);
@@ -101,10 +99,8 @@ class NotebookLSPClient {
     this.socket.send(JSON.stringify({ type, ...payload }));
   }
 
-  // TODO
-  private sendToLSP(code: string) {
-    // Implement LSP communication here
-    console.log('NotebookHandler current representation:\n', code);
+  public sendPathChange(newPath: string) {
+    this.sendMessage('change_path', { new_path: newPath });
   }
 
   // cleans up the socket connection
