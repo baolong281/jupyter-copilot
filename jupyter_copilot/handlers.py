@@ -262,7 +262,19 @@ class NotebookLSPHandler(WebSocketHandler):
         lsp_client.unregister_restart_callback(self.notebook_manager._callback)
         self.notebook_manager = None
 
+class AuthHandler(APIHandler):
+    async def post(self, action):
+        if action == "login":
+            res = lsp_client.send_request("signInInitiate", {})
+        elif action == "signout":
+            res = lsp_client.send_request("signOut", {})
+        else:
+            self.set_status(404)
+            self.finish({"erorr": "Unknown action"})
 
+        logging.info(res)
+        self.finish(res)
+        
 def setup_handlers(server_app):
     global logging
     logging = server_app.log
@@ -274,7 +286,8 @@ def setup_handlers(server_app):
     host_pattern = ".*$"
     base_url = web_app.settings["base_url"] + "jupyter-copilot"
     handlers = [
-        (url_path_join(base_url, "ws"), NotebookLSPHandler)
+        (url_path_join(base_url, "ws"), NotebookLSPHandler),
+        (url_path_join(base_url, "(.+)"), AuthHandler)
     ]
     logging.info("base url: %s", base_url)
     web_app.add_handlers(host_pattern, handlers)

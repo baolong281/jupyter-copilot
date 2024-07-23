@@ -2,11 +2,11 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
-import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { INotebookTracker } from '@jupyterlab/notebook';
 import { ServerConnection } from '@jupyterlab/services';
 import { URLExt } from '@jupyterlab/coreutils';
 import { NotebookLSPClient } from './lsp';
+import { ICommandPalette } from '@jupyterlab/apputils';
 import {
   ICompletionProviderManager,
   IInlineCompletionItem,
@@ -16,6 +16,7 @@ import {
   CompletionHandler
 } from '@jupyterlab/completer';
 import { CodeEditor } from '@jupyterlab/codeeditor';
+import { LoginExecute, SignOutExecute } from './commands/authentication';
 
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
@@ -80,7 +81,7 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
 
   // logic to actually fetch the completion
   private async fetchCompletion(
-    request: CompletionHandler.IRequest,
+    _request: CompletionHandler.IRequest,
     context: IInlineCompletionContext
   ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
     const editor = (context as any).editor as CodeEditor.IEditor;
@@ -110,39 +111,35 @@ const plugin: JupyterFrontEndPlugin<void> = {
   id: 'jupyter_copilot:plugin',
   description: 'GitHub Copilot for Jupyter',
   autoStart: true,
-  optional: [ISettingRegistry],
-  requires: [INotebookTracker, ICompletionProviderManager],
+  requires: [INotebookTracker, ICompletionProviderManager, ICommandPalette],
   activate: (
     app: JupyterFrontEnd,
     notebookTracker: INotebookTracker,
     providerManager: ICompletionProviderManager,
-    settingRegistry: ISettingRegistry | null
+    palette: ICommandPalette
   ) => {
-    console.log('JupyterLab extension jupyter_copilot is activated!');
-
     const notebookClients = new Map<string, NotebookLSPClient>();
 
     const provider = new CopilotInlineProvider(notebookClients);
     providerManager.registerInlineProvider(provider);
-    // providerManager.inline?.accept();
 
-    if (settingRegistry) {
-      settingRegistry
-        .load(plugin.id)
-        .then(settings => {
-          console.log('jupyter_copilot settings loaded:', settings.composite);
-        })
-        .catch(reason => {
-          console.error('Failed to load settings for jupyter_copilot.', reason);
-        });
-    }
+    // TODO: make work
+    // if (settingRegistry) {
+    //   settingRegistry
+    //     .load(plugin.id)
+    //     .then(settings => {
+    //       console.log('jupyter_copilot settings loaded:', settings.composite);
+    //     })
+    //     .catch(reason => {
+    //       console.error('Failed to load settings for jupyter_copilot.', reason);
+    //     });
+    // }
 
     const command = 'jupyter_copilot:completion';
     app.commands.addCommand(command, {
       label: 'Copilot Completion',
       execute: () => {
         // get id of current notebook panel
-        console.log('command executing');
         const notebookPanelId = notebookTracker.currentWidget?.id;
         providerManager.inline?.accept(notebookPanelId || '');
       }
@@ -152,6 +149,33 @@ const plugin: JupyterFrontEndPlugin<void> = {
       command,
       keys: ['Ctrl J'],
       selector: '.cm-editor'
+    });
+
+    const commandID = 'Copilot: Sign In';
+    app.commands.addCommand(commandID, {
+      label: 'Copilot: Sign In With GitHub',
+      iconClass: 'cpgithub-icon',
+      execute: () => LoginExecute(app)
+    });
+
+    const SignOutCommand = 'Copilot: Sign Out';
+    app.commands.addCommand(SignOutCommand, {
+      label: 'Copilot: Sign Out With GitHub',
+      iconClass: 'cpgithub-icon',
+      execute: () => SignOutExecute(app)
+    });
+
+    console.log(palette);
+    // make them pop up at the top of the palette first items on the palleete commands and update rank
+    palette.addItem({
+      command: commandID,
+      category: 'GitHub Copilot',
+      rank: 0
+    });
+    palette.addItem({
+      command: SignOutCommand,
+      category: 'GitHub Copilot',
+      rank: 1
     });
 
     const settings = ServerConnection.makeSettings();
