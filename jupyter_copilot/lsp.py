@@ -2,7 +2,7 @@ import json
 import subprocess
 import threading
 import time
-from typing import Dict, Callable, Any, Optional, List
+from typing import Dict, Callable, Any, List
 import os
 # Wrapper class for interfacing with the Copilot LSP.
 # initializes, sends messages, and reads output
@@ -17,6 +17,8 @@ class LSPWrapper:
 
         self.process = self._spawn_process()
         self.request_id = 0
+
+        # lock for restarting callback thread
         self.restart_lock = threading.Lock()
 
         # these maps hold callbacks for requests for when we recieve a response
@@ -46,6 +48,7 @@ class LSPWrapper:
         self.logger.info("call back being unregistered")
 
 
+    # spawns the lsp process and returns it
     def _spawn_process(self) -> subprocess.Popen[str]:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         parent_dir = os.path.dirname(current_dir)
@@ -89,11 +92,18 @@ class LSPWrapper:
         self.send_notification("initialized", {})
 
 
+    # polls the process to see if it is running
+    # if it is running return 0 else return the exit code
+    # this might be be bad if the process exited with code 0 
+    # TODO check
     def is_process_running(self) -> int:
         if self.process.poll() is None:
-            return 1
+            return 0
         else:
 
+            # only print out if exit code is not 130
+            # if exit code is 130, ctrl + c was pressed in terminal
+            # printing will mess up the exit confirmation
             if self.process.returncode != 130:
                 self.logger.error(f"LSP server process has terminated. Exit code: {
                     self.process.returncode}")
@@ -102,6 +112,8 @@ class LSPWrapper:
             return self.process.returncode
 
 
+    # restart the server
+    # this should run in a separate thread
     def restart_server(self):
         with self.restart_lock:
             self.logger.info("Restarting LSP server...")
@@ -118,21 +130,29 @@ class LSPWrapper:
             if not self.is_process_running():
                 raise RuntimeError("Failed to restart the LSP server process")
 
-            self.logger.info(self.restart_callbacks)
             for callback in self.restart_callbacks:
                 callback()
 
 
+    # constantly runs in a separate thread to read the output from the lsp
+    # if the process is not running and the exit code was not 130 (ctrl + c) then restart the server
     def _read_output(self):
         while True:
             process_return_code = self.is_process_running()
+            # if ctrl + c just exit the thread
+            # process should have already been killed
             if process_return_code == 130:
                 return
+            # if the process is not running, restart it
             elif process_return_code != 1:
                 self.logger.info("LSP server process has stopped. Attempting to restart...")
                 if not self.restart_lock.locked():
+                    # restart the server in a separate thread
+                    # making sure that we don't try to restart the server multiple times
                     restart_thread = threading.Thread(target=self.restart_server)
                     restart_thread.start()
+                # wait 10 ms before checking again
+                # the output thread keeps looping so it would print out the error message multiple times
                 self.wait(10)
                 continue
 
@@ -149,12 +169,10 @@ class LSPWrapper:
         
 
     # when we send notifications, we don't expect a response
-
     def send_notification(self, method: str, params: dict):
         self._send_message({"method": method, "params": params})
 
     # send message to lsp through stdin with special lsp format
-
     def _send_message(self, data: dict):
         if not self.is_process_running():
             raise RuntimeError(

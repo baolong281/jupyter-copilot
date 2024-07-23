@@ -1,20 +1,14 @@
 import asyncio
-import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from tornado.ioloop import IOLoop
-from jupyter_server.base.handlers import APIHandler
 from tornado.websocket import WebSocketHandler
 from jupyter_server.utils import url_path_join
-import tornado
 import json
 import nbformat
 import os
-import subprocess
 from jupyter_copilot.lsp import LSPWrapper
 
 # manages the content of the notebook in memory
-
-
 class NotebookManager:
     def __init__(self, path):
         self.path = path
@@ -25,8 +19,10 @@ class NotebookManager:
         self.language = "python"
         self.notebook_cells = self.load_notebook()
 
+        # callback to run if the lsp server is ever restarted
+        # need to reload the notebook content into the lsp server
         def _restart_callback():
-            logging.info("set_restart_callback running")
+
             self.load_notebook()
 
         self._callback = _restart_callback
@@ -260,6 +256,8 @@ class NotebookLSPHandler(WebSocketHandler):
 
     def on_close(self):
         logging.info("WebSocket closed")
+        # when socket is closed send the close signal to server
+        # unregister the lsp server restart callback
         self.notebook_manager.send_close_signal()
         lsp_client.unregister_restart_callback(self.notebook_manager._callback)
         self.notebook_manager = None
