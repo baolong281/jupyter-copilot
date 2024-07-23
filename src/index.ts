@@ -2,11 +2,12 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
-import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { INotebookTracker } from '@jupyterlab/notebook';
 import { ServerConnection } from '@jupyterlab/services';
 import { URLExt } from '@jupyterlab/coreutils';
 import { NotebookLSPClient } from './lsp';
+import { ICommandPalette, MainAreaWidget} from '@jupyterlab/apputils';
+import { Widget } from '@lumino/widgets';
 import {
   ICompletionProviderManager,
   IInlineCompletionItem,
@@ -17,6 +18,18 @@ import {
 } from '@jupyterlab/completer';
 import { CodeEditor } from '@jupyterlab/codeeditor';
 import { makePostRequest } from './handler';
+
+interface AuthMessage {
+  status: string;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+}
+
+
+
+
 
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
@@ -103,8 +116,6 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
     return { items };
   }
 }
-import { ICommandPalette} from '@jupyterlab/apputils';
-
 
 /**
  * Initialization data for the jupyter_copilot extension.
@@ -113,13 +124,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
   id: 'jupyter_copilot:plugin',
   description: 'GitHub Copilot for Jupyter',
   autoStart: true,
-  optional: [ISettingRegistry],
   requires: [INotebookTracker, ICompletionProviderManager,ICommandPalette],
   activate: (
     app: JupyterFrontEnd,
     notebookTracker: INotebookTracker,
     providerManager: ICompletionProviderManager,
-    settingRegistry: ISettingRegistry | null,
     palette: ICommandPalette,
   ) => {
 
@@ -128,20 +137,18 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     const provider = new CopilotInlineProvider(notebookClients);
     providerManager.registerInlineProvider(provider);
-    // providerManager.inline?.accept();
 
-    console.log(settingRegistry);
-
-    if (settingRegistry) {
-      settingRegistry
-        .load(plugin.id)
-        .then(settings => {
-          console.log('jupyter_copilot settings loaded:', settings.composite);
-        })
-        .catch(reason => {
-          console.error('Failed to load settings for jupyter_copilot.', reason);
-        });
-    }
+    // TODO: make work
+    // if (settingRegistry) {
+    //   settingRegistry
+    //     .load(plugin.id)
+    //     .then(settings => {
+    //       console.log('jupyter_copilot settings loaded:', settings.composite);
+    //     })
+    //     .catch(reason => {
+    //       console.error('Failed to load settings for jupyter_copilot.', reason);
+    //     });
+    // }
 
     const command = 'jupyter_copilot:completion';
     app.commands.addCommand(command, {
@@ -160,22 +167,110 @@ const plugin: JupyterFrontEndPlugin<void> = {
       selector: '.cm-editor'
     });
 
-    const commandID = 'Sign In With GitHub';
+    const commandID = 'GitHub Copilot: Sign In';
     const toggled = false;
     app.commands.addCommand(commandID, {
-      label: 'Sign In With GitHub',
+      label: 'Github Copilot: Sign In With GitHub',
       isToggled: () => toggled,
       isVisible: () => true,
       isEnabled: () => true,
       iconClass: 'cpgithub-icon',
       execute: () => {
         console.log("MAKING POST ")
-        makePostRequest("signInInitiate", {}).then(data =>{
-          console.log(data);
+        makePostRequest("login", {}).then(data =>{
+          // data is a string turned into a json object
+          data = JSON.parse(data);
+          
+
+          const authMessage = data as any;
+          console.log(authMessage.verificationUri)
+          const signWidget = (authData: AuthMessage) => {
+            const content = new Widget();
+            
+            const messageElement = document.createElement('div');
+
+
+                
+
+            messageElement.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+                color: #333;
+                background-color: #fff;
+                padding: 30px;
+                max-width: 400px;
+                margin: 0 auto;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                text-align: center;
+            `;
+            
+            messageElement.innerHTML = `
+              <h2 style="font-size: 24px; margin-bottom: 20px; color: #0366d6;">GitHub Copilot Authentication</h2>
+              <p style="margin-bottom: 10px;">Enter this code on GitHub:</p>
+              <div style="font-size: 32px; font-weight: bold; background-color: #f6f8fa; color: #0366d6; padding: 15px; border-radius: 5px; margin: 20px 0; letter-spacing: 2px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">${authData.userCode}</div>
+              <p style="margin-bottom: 10px;">Go to: <a href="${authData.verificationUri}" target="_blank" style="color: #0366d6; text-decoration: none;">${authData.verificationUri}</a></p>
+              <p style="font-size: 14px; color: #666;">This code will expire in <span id="timer" style="font-weight: bold;">${authData.expiresIn}</span> seconds.</p>
+            `;
+            content.node.appendChild(messageElement);
+            const widget = new MainAreaWidget({ content });
+            widget.id = 'apod-jupyterlab';
+            widget.title.label = 'Sign In';
+            widget.title.closable = true;
+            return widget;
+          }
+          console.log("AUTH MESSAGE")
+          console.log(authMessage);
+          let widget = signWidget(authMessage);
+          if(!widget.isDisposed){
+            widget.dispose();
+            widget = signWidget(authMessage);
+          }
+          if (!widget.isAttached) {
+            app.shell.add(widget, 'main');
+          }
+          // countdown timer for expires in the this code will expire in {expiresin seconds}
+          let timeRemaining = authMessage.expiresIn;
+          const interval = setInterval(() => {
+            if (timeRemaining <= 0) {
+              clearInterval(interval);
+              widget.dispose();
+              return;
+            }
+            const timerElement = widget.node.querySelector('#timer');
+            if (timerElement) {
+              timerElement.textContent = timeRemaining.toString();
+            }
+            timeRemaining--;
+          }, 1000);
+          app.shell.activateById(widget.id);
         })
       }
     });
-    palette.addItem({command: commandID, category: 'GitHub Copilot'}); 
+
+    const SignOutCommand = 'GitHub Copilot: Sign Out';
+    app.commands.addCommand(SignOutCommand, {
+      label: 'Github Copilot: Sign Out With GitHub',
+      isToggled: () => toggled,
+      isVisible: () => true,
+      isEnabled: () => true,
+      iconClass: 'cpgithub-icon',
+      execute: () => {
+        console.log("MAKING POST ")
+        makePostRequest("signout", {}).then(data =>{
+          console.log(data);
+          
+        })
+      }
+    });
+
+    console.log(palette)
+    // make them pop up at the top of the palette first items on the palleete commands and update rank
+    palette.addItem({command: commandID, category: 'GitHub Copilot', rank: 0});
+    palette.addItem({command: SignOutCommand, category: 'GitHub Copilot', rank: 1});
 
     const settings = ServerConnection.makeSettings();
     // notebook tracker is used to keep track of the notebooks that are open
