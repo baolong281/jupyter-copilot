@@ -24,6 +24,14 @@ class NotebookManager:
         self.document_version = 0
         self.language = "python"
         self.notebook_cells = self.load_notebook()
+
+        def _restart_callback():
+            logging.info("set_restart_callback running")
+            self.load_notebook()
+
+        self._callback = _restart_callback
+        lsp_client.register_restart_callback(self._callback)
+
         logging.info(self.notebook_cells)
 
     # load notebook content into memory
@@ -102,6 +110,7 @@ class NotebookManager:
             },
             "contentChanges": [{"text": code}]
         })
+        logging.info("SENDING FULL UPDATE")
 
     def request_completion(self, cell_id: int, line: int, character: int) -> Dict[str, Any]:
         line = self._get_absolute_line_num(cell_id, line)
@@ -252,6 +261,7 @@ class NotebookLSPHandler(WebSocketHandler):
     def on_close(self):
         logging.info("WebSocket closed")
         self.notebook_manager.send_close_signal()
+        lsp_client.unregister_restart_callback(self.notebook_manager._callback)
         self.notebook_manager = None
 
 
@@ -271,13 +281,6 @@ def setup_handlers(server_app):
     logging.info("base url: %s", base_url)
     web_app.add_handlers(host_pattern, handlers)
 
-    lsp_client.wait(1000)
-
-    init_result = lsp_client.send_request("initialize", {
-        "capabilities": {"workspace": {"workspaceFolders": True}}
-    })
 
 
-    # Send `initialized` notification
-    lsp_client.send_notification("initialized", {})
 

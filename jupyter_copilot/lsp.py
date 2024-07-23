@@ -2,7 +2,7 @@ import json
 import subprocess
 import threading
 import time
-from typing import Dict, Callable, Any, Optional
+from typing import Dict, Callable, Any, Optional, List
 import os
 # Wrapper class for interfacing with the Copilot LSP.
 # initializes, sends messages, and reads output
@@ -13,38 +13,11 @@ import os
 
 class LSPWrapper:
     def __init__(self, logger):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(current_dir)
-        lsp_path = os.path.join(
-            parent_dir, "node_modules", "copilot-node-server", "copilot", "dist", "language-server.js")
-        logger.info(f"Initializing Copilot LSP server in: {
-            ''.join(lsp_path)}")
         self.logger = logger
-        try:
-            # start the process and throw an error if it fails
-            self.process = subprocess.Popen(
-                ["node", lsp_path, "--stdio"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=0
-            )
-        except FileNotFoundError as e:
-            logger.error(
-                f"Error: Could not find the specified file or directory. Full error: {e}")
-            logger.error(f"Current working directory: {os.getcwd()}")
-            raise
-        except PermissionError as e:
-            logger.error(
-                f"Error: Permission denied when trying to execute the command. Full error: {e}")
-            raise
-        except Exception as e:
-            logger.error(
-                f"An unexpected error occurred while starting the LSP server: {e}")
-            raise
 
+        self.process = self._spawn_process()
         self.request_id = 0
+        self.restart_lock = threading.Lock()
 
         # these maps hold callbacks for requests for when we recieve a response
         self.resolve_map: Dict[int, Callable[[Any], None]] = {}
@@ -53,35 +26,127 @@ class LSPWrapper:
         # Start reading output in a separate thread
         self.output_thread = threading.Thread(target=self._read_output)
         self.output_thread.start()
+        self.restart_callbacks: List[Callable[[], None]] = []
 
         # Check if the process started successfully
         if not self.is_process_running():
             raise RuntimeError("Failed to start the LSP server process")
 
-    def is_process_running(self) -> bool:
-        if self.process.poll() is None:
-            return True
-        else:
-            self.logger.error(f"LSP server process has terminated. Exit code: {
-                self.process.returncode}")
-            self.logger.error("stderr output:")
-            self.logger.error(self.process.stderr.read())
-            return False
+        self.wait(500)
+        self.send_startup_notification()
 
-    # constantly polling in a seperate thread
+    def register_restart_callback(self, callback: Callable[[], None]):
+        self.logger.info("registering callback...")
+        self.logger.info(callback)
+        self.restart_callbacks.append(callback)
+
+    def unregister_restart_callback(self, callback: Callable[[], None]):
+        self.restart_callbacks.remove(callback)
+        self.logger.info(callback)
+        self.logger.info("call back being unregistered")
+
+
+    def _spawn_process(self) -> subprocess.Popen[str]:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        lsp_path = os.path.join(
+            parent_dir, "node_modules", "copilot-node-server", "copilot", "dist", "language-server.js")
+        self.logger.info(f"Initializing Copilot LSP server in: {
+            ''.join(lsp_path)}")
+        try:
+            # start the process and throw an error if it fails
+            process = subprocess.Popen(
+                ["node", lsp_path, "--stdio"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=0
+            )
+        except FileNotFoundError as e:
+            self.logger.error(
+                f"Error: Could not find the specified file or directory. Full error: {e}")
+            self.logger.error(f"Current working directory: {os.getcwd()}")
+            raise
+        except PermissionError as e:
+            self.logger.error(
+                f"Error: Permission denied when trying to execute the command. Full error: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(
+                f"An unexpected error occurred while starting the LSP server: {e}")
+            raise
+
+
+        return process
+
+    def send_startup_notification(self):
+        self.send_request("initialize", {
+            "capabilities": {"workspace": {"workspaceFolders": True}}
+        })
+
+        # Send `initialized` notification
+        self.send_notification("initialized", {})
+
+
+    def is_process_running(self) -> int:
+        if self.process.poll() is None:
+            return 1
+        else:
+
+            if self.process.returncode != 130:
+                self.logger.error(f"LSP server process has terminated. Exit code: {
+                    self.process.returncode}")
+                self.logger.error("stderr output:")
+
+            return self.process.returncode
+
+
+    def restart_server(self):
+        with self.restart_lock:
+            self.logger.info("Restarting LSP server...")
+            if self.process:
+                self.process.terminate()
+                self.process.wait()
+            
+            self.process = self._spawn_process()
+
+            self.wait(500)
+
+            self.send_startup_notification()
+
+            if not self.is_process_running():
+                raise RuntimeError("Failed to restart the LSP server process")
+
+            self.logger.info(self.restart_callbacks)
+            for callback in self.restart_callbacks:
+                callback()
+
+
     def _read_output(self):
-        while self.is_process_running():
+        while True:
+            process_return_code = self.is_process_running()
+            if process_return_code == 130:
+                return
+            elif process_return_code != 1:
+                self.logger.info("LSP server process has stopped. Attempting to restart...")
+                if not self.restart_lock.locked():
+                    restart_thread = threading.Thread(target=self.restart_server)
+                    restart_thread.start()
+                self.wait(10)
+                continue
+
             header = self.process.stdout.readline()
             if not header:
-                break
+                continue
             try:
                 content_length = int(header.strip().split(': ')[1])
                 self.process.stdout.readline()  # Read the empty line
                 content = self.process.stdout.read(content_length)
-                # whenever we get a message, we process it
                 self._handle_received_payload(json.loads(content))
             except Exception as e:
                 self.logger.error(f"Error processing server output: {e}")
+        
 
     # when we send notifications, we don't expect a response
 
@@ -180,5 +245,4 @@ class LSPWrapper:
 
     @ staticmethod
     def wait(ms: int):
-        print(f"Waiting for {ms} ms")
         time.sleep(ms / 1000)
