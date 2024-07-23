@@ -31,7 +31,7 @@ class LSPWrapper:
         self.restart_callbacks: List[Callable[[], None]] = []
 
         # Check if the process started successfully
-        if not self.is_process_running():
+        if self.is_process_running() != 0:
             raise RuntimeError("Failed to start the LSP server process")
 
         self.wait(500)
@@ -100,7 +100,6 @@ class LSPWrapper:
         if self.process.poll() is None:
             return 0
         else:
-
             # only print out if exit code is not 130
             # if exit code is 130, ctrl + c was pressed in terminal
             # printing will mess up the exit confirmation
@@ -127,11 +126,16 @@ class LSPWrapper:
 
             self.send_startup_notification()
 
-            if not self.is_process_running():
+            if self.is_process_running() != 0:
                 raise RuntimeError("Failed to restart the LSP server process")
 
             for callback in self.restart_callbacks:
                 callback()
+
+    def create_restart_thread(self):
+        if not self.restart_lock.locked():
+            restart_thread = threading.Thread(target=self.restart_server)
+            restart_thread.start()
 
 
     # constantly runs in a separate thread to read the output from the lsp
@@ -144,13 +148,9 @@ class LSPWrapper:
             if process_return_code == 130:
                 return
             # if the process is not running, restart it
-            elif process_return_code != 1:
+            elif process_return_code != 0:
                 self.logger.info("LSP server process has stopped. Attempting to restart...")
-                if not self.restart_lock.locked():
-                    # restart the server in a separate thread
-                    # making sure that we don't try to restart the server multiple times
-                    restart_thread = threading.Thread(target=self.restart_server)
-                    restart_thread.start()
+                self.create_restart_thread()
                 # wait 10 ms before checking again
                 # the output thread keeps looping so it would print out the error message multiple times
                 self.wait(10)
@@ -174,9 +174,9 @@ class LSPWrapper:
 
     # send message to lsp through stdin with special lsp format
     def _send_message(self, data: dict):
-        if not self.is_process_running():
+        if self.is_process_running() != 0:
             raise RuntimeError(
-                "Cannot send message. LSP server process is not running.")
+                "The LSP server process has terminated unexpectedly.")
 
         message = json.dumps({**data, "jsonrpc": "2.0"})
         content_length = len(message.encode('utf-8'))
@@ -187,7 +187,10 @@ class LSPWrapper:
         except BrokenPipeError:
             self.logger.error(
                 "Error: Broken pipe. The LSP server process may have terminated unexpectedly.")
+            # restart the server in new thread
             raise
+
+
 
     # send request to lsp and wait for response
     # if a response comes, then handle_received_payload will be called
@@ -226,24 +229,6 @@ class LSPWrapper:
         self.resolve_map.pop(self.request_id, None)
         self.reject_map.pop(self.request_id, None)
         return response['result']
-
-    # get the completion from copilot
-    def get_completion(self, text, line, character, file):
-        result = self.send_request("textDocument/completion", {
-            "textDocument": {
-                "uri": f"file:///{file}"
-            },
-            "position": {
-                "line": line,
-                "character": character
-            }
-        })
-
-        if len(result) == 0:
-            return None
-
-        result = result[0]
-        return result
 
     # when we get a message, we process it
     # if it has an id, then we call the resolve or reject callback
