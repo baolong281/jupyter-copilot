@@ -4,18 +4,27 @@ import threading
 import time
 from typing import Dict, Callable, Any, List
 import os
-# Wrapper class for interfacing with the Copilot LSP.
-# initializes, sends messages, and reads output
-# the actual LSP server is from copilot-node-server which actually calls Copilot servers
-# https://www.npmjs.com/package/copilot-node-server?activeTab=dependents
-# the LSP requires that we communicate with it through stdout using json rpc
-
 
 class LSPWrapper:
+    """
+    Wrapper class for interfacing with the Copilot LSP.
+    initializes, sends messages, and reads output
+    the actual LSP server is from copilot-node-server which actually calls Copilot servers
+    https://www.npmjs.com/package/copilot-node-server?activeTab=dependents
+    the LSP requires that we communicate with it through stdout using json rpc
+    """
     def __init__(self, logger):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        lsp_path = os.path.join(
+            parent_dir, "node_modules", "copilot-node-server", "copilot", "dist", "language-server.js")
+
+        self.spawn_command = ["node", lsp_path, "--stdio"]
+
+
         self.logger = logger
 
-        self.process = self._spawn_process()
+        self.process = self.__spawn_process()
         self.request_id = 0
 
         # lock for restarting callback thread
@@ -26,7 +35,7 @@ class LSPWrapper:
         self.reject_map: Dict[int, Callable[[Any], None]] = {}
 
         # Start reading output in a separate thread
-        self.output_thread = threading.Thread(target=self._read_output)
+        self.output_thread = threading.Thread(target=self.__read_output)
         self.output_thread.start()
         self.restart_callbacks: List[Callable[[], None]] = []
 
@@ -35,31 +44,23 @@ class LSPWrapper:
             raise RuntimeError("Failed to start the LSP server process")
 
         self.wait(500)
-        self.send_startup_notification()
+        self.__send_startup_notification()
 
     def register_restart_callback(self, callback: Callable[[], None]):
-        self.logger.info("registering callback...")
-        self.logger.info(callback)
         self.restart_callbacks.append(callback)
 
     def unregister_restart_callback(self, callback: Callable[[], None]):
+        """ remove callback from the list """
         self.restart_callbacks.remove(callback)
-        self.logger.info(callback)
-        self.logger.info("call back being unregistered")
 
 
-    # spawns the lsp process and returns it
-    def _spawn_process(self) -> subprocess.Popen[str]:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(current_dir)
-        lsp_path = os.path.join(
-            parent_dir, "node_modules", "copilot-node-server", "copilot", "dist", "language-server.js")
-        self.logger.info(f"Initializing Copilot LSP server in: {
-            ''.join(lsp_path)}")
+    def __spawn_process(self) -> subprocess.Popen[str]:
+        """ spawns LSP process then returns it"""
+        self.logger.info("Spawning LSP process with command %s", self.spawn_command)
         try:
             # start the process and throw an error if it fails
             process = subprocess.Popen(
-                ["node", lsp_path, "--stdio"],
+                self.spawn_command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -83,20 +84,25 @@ class LSPWrapper:
 
         return process
 
-    def send_startup_notification(self):
+    def __send_startup_notification(self):
+        """ 
+        send the initialize request to the lsp server
+        must be called after the server has started
+        """
         self.send_request("initialize", {
             "capabilities": {"workspace": {"workspaceFolders": True}}
         })
 
-        # Send `initialized` notification
         self.send_notification("initialized", {})
 
 
-    # polls the process to see if it is running
-    # if it is running return 0 else return the exit code
-    # this might be be bad if the process exited with code 0 
-    # TODO check
     def is_process_running(self) -> int:
+        """
+        polls the process to see if it is running
+        if it is running return 0 else return the exit code
+        this might be be bad if the process exited with code 0
+        fix later
+        """
         if self.process.poll() is None:
             return 0
         else:
@@ -111,20 +117,22 @@ class LSPWrapper:
             return self.process.returncode
 
 
-    # restart the server
-    # this should run in a separate thread
-    def restart_server(self):
+    def __restart_server(self):
+        """
+        restarts the server process
+        this should run in a seperate thread
+        """
         with self.restart_lock:
             self.logger.info("Restarting LSP server...")
             if self.process:
                 self.process.terminate()
                 self.process.wait()
             
-            self.process = self._spawn_process()
+            self.process = self.__spawn_process()
 
             self.wait(500)
 
-            self.send_startup_notification()
+            self.__send_startup_notification()
 
             if self.is_process_running() != 0:
                 raise RuntimeError("Failed to restart the LSP server process")
@@ -132,15 +140,20 @@ class LSPWrapper:
             for callback in self.restart_callbacks:
                 callback()
 
-    def create_restart_thread(self):
+    def __create_restart_thread(self):
+        """
+        restart the serer in a new thread
+        """
         if not self.restart_lock.locked():
-            restart_thread = threading.Thread(target=self.restart_server)
+            restart_thread = threading.Thread(target=self.__restart_server)
             restart_thread.start()
 
 
-    # constantly runs in a separate thread to read the output from the lsp
-    # if the process is not running and the exit code was not 130 (ctrl + c) then restart the server
-    def _read_output(self):
+    def __read_output(self):
+        """
+        this runs in a separate thread to read the output from the lsp
+        if the process is not running and the exit code was not 130 (ctrl + c) then restart the server
+        """
         while True:
             process_return_code = self.is_process_running()
             # if ctrl + c just exit the thread
@@ -150,10 +163,16 @@ class LSPWrapper:
             # if the process is not running, restart it
             elif process_return_code != 0:
                 self.logger.info("LSP server process has stopped. Attempting to restart...")
-                self.create_restart_thread()
+
+                self.__create_restart_thread()
+
                 # wait 10 ms before checking again
                 # the output thread keeps looping so it would print out the error message multiple times
                 self.wait(10)
+                continue
+
+            if not self.process.stdout:
+                self.logger.erorr("Erorr: stdout is none")
                 continue
 
             header = self.process.stdout.readline()
@@ -168,12 +187,12 @@ class LSPWrapper:
                 self.logger.error(f"Error processing server output: {e}")
         
 
-    # when we send notifications, we don't expect a response
     def send_notification(self, method: str, params: dict):
-        self._send_message({"method": method, "params": params})
+        """ send notification to lsp server with no response """
+        self.__send_message({"method": method, "params": params})
 
-    # send message to lsp through stdin with special lsp format
-    def _send_message(self, data: dict):
+    def __send_message(self, data: dict):
+        """ send message with lsp format to lsp server """
         if self.is_process_running() != 0:
             raise RuntimeError(
                 "The LSP server process has terminated unexpectedly.")
@@ -182,6 +201,9 @@ class LSPWrapper:
         content_length = len(message.encode('utf-8'))
         rpc_message = f"Content-Length: {content_length}\r\n\r\n{message}"
         try:
+            if not self.process.stdin:
+                self.logger.error("Error: stdin is none")
+                return
             self.process.stdin.write(rpc_message)
             self.process.stdin.flush()
         except BrokenPipeError:
@@ -192,11 +214,14 @@ class LSPWrapper:
 
 
 
-    # send request to lsp and wait for response
-    # if a response comes, then handle_received_payload will be called
     def send_request(self, method: str, params: dict) -> Any:
+        """
+        sends a request to the lsp and returns the response
+        if a response comes then __handle_recieved_payloads will be called
+        and will run the resolve or reject callback
+        """
         self.request_id += 1
-        self._send_message(
+        self.__send_message(
             {"id": self.request_id, "method": method, "params": params})
         result = threading.Event()
         response = {}
@@ -230,10 +255,11 @@ class LSPWrapper:
         self.reject_map.pop(self.request_id, None)
         return response['result']
 
-    # when we get a message, we process it
-    # if it has an id, then we call the resolve or reject callback
-
     def _handle_received_payload(self, payload: dict):
+        """ 
+        handle the payload from the lsp server 
+        if the payload has an id, then call the resolve or reject callback
+        """
         self.logger.info("payload: %s", payload)
         if "id" in payload:
             if "result" in payload:
