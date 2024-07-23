@@ -98,6 +98,7 @@ const SignedOutWidget = () => {
   return widget;
 };
 
+// function to execute whenever the login command is called
 export const LoginExecute = (app: JupyterFrontEnd): void => {
   makePostRequest('login', {}).then(data => {
     // data is a string turned into a json object
@@ -143,6 +144,7 @@ export const LoginExecute = (app: JupyterFrontEnd): void => {
   });
 };
 
+// function to execute when the signout command is called
 export const SignOutExecute = (app: JupyterFrontEnd): void => {
   makePostRequest('signout', {}).then(data => {
     const res = JSON.parse(data) as SignOutResponse;
