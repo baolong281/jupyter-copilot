@@ -6,7 +6,7 @@ import { INotebookTracker } from '@jupyterlab/notebook';
 import { ServerConnection } from '@jupyterlab/services';
 import { URLExt } from '@jupyterlab/coreutils';
 import { NotebookLSPClient } from './lsp';
-import { ICommandPalette, MainAreaWidget} from '@jupyterlab/apputils';
+import { ICommandPalette, MainAreaWidget } from '@jupyterlab/apputils';
 import { Widget } from '@lumino/widgets';
 import {
   ICompletionProviderManager,
@@ -19,17 +19,21 @@ import {
 import { CodeEditor } from '@jupyterlab/codeeditor';
 import { makePostRequest } from './handler';
 
-interface AuthMessage {
-  status: string;
+interface AlreadySignedInResponse {
+  status: 'AlreadySignedIn';
+  user: string;
+}
+
+interface PendingLoginResponse {
+  status: 'PendingLogin';
+  user?: string;
   userCode: string;
   verificationUri: string;
   expiresIn: number;
   interval: number;
 }
 
-
-
-
+type LoginResponse = AlreadySignedInResponse | PendingLoginResponse;
 
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
@@ -124,15 +128,13 @@ const plugin: JupyterFrontEndPlugin<void> = {
   id: 'jupyter_copilot:plugin',
   description: 'GitHub Copilot for Jupyter',
   autoStart: true,
-  requires: [INotebookTracker, ICompletionProviderManager,ICommandPalette],
+  requires: [INotebookTracker, ICompletionProviderManager, ICommandPalette],
   activate: (
     app: JupyterFrontEnd,
     notebookTracker: INotebookTracker,
     providerManager: ICompletionProviderManager,
-    palette: ICommandPalette,
+    palette: ICommandPalette
   ) => {
-
- 
     const notebookClients = new Map<string, NotebookLSPClient>();
 
     const provider = new CopilotInlineProvider(notebookClients);
@@ -176,21 +178,20 @@ const plugin: JupyterFrontEndPlugin<void> = {
       isEnabled: () => true,
       iconClass: 'cpgithub-icon',
       execute: () => {
-        console.log("MAKING POST ")
-        makePostRequest("login", {}).then(data =>{
+        makePostRequest('login', {}).then(data => {
           // data is a string turned into a json object
-          data = JSON.parse(data);
-          
+          const res = JSON.parse(data) as LoginResponse;
 
-          const authMessage = data as any;
-          console.log(authMessage.verificationUri)
-          const signWidget = (authData: AuthMessage) => {
+          // handle this branch later
+          if (res.status === 'AlreadySignedIn') {
+            console.log('Already signed in as', res.user);
+            return;
+          }
+
+          const signWidget = (authData: PendingLoginResponse) => {
             const content = new Widget();
-            
+
             const messageElement = document.createElement('div');
-
-
-                
 
             messageElement.style.cssText = `
                 display: flex;
@@ -207,7 +208,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
                 box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
                 text-align: center;
             `;
-            
+
             messageElement.innerHTML = `
               <h2 style="font-size: 24px; margin-bottom: 20px; color: #0366d6;">GitHub Copilot Authentication</h2>
               <p style="margin-bottom: 10px;">Enter this code on GitHub:</p>
@@ -221,19 +222,19 @@ const plugin: JupyterFrontEndPlugin<void> = {
             widget.title.label = 'Sign In';
             widget.title.closable = true;
             return widget;
-          }
-          console.log("AUTH MESSAGE")
-          console.log(authMessage);
-          let widget = signWidget(authMessage);
-          if(!widget.isDisposed){
+          };
+          console.log('AUTH MESSAGE');
+          console.log(res);
+          let widget = signWidget(res);
+          if (!widget.isDisposed) {
             widget.dispose();
-            widget = signWidget(authMessage);
+            widget = signWidget(res);
           }
           if (!widget.isAttached) {
             app.shell.add(widget, 'main');
           }
           // countdown timer for expires in the this code will expire in {expiresin seconds}
-          let timeRemaining = authMessage.expiresIn;
+          let timeRemaining = res.expiresIn;
           const interval = setInterval(() => {
             if (timeRemaining <= 0) {
               clearInterval(interval);
@@ -247,7 +248,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
             timeRemaining--;
           }, 1000);
           app.shell.activateById(widget.id);
-        })
+        });
       }
     });
 
@@ -259,18 +260,25 @@ const plugin: JupyterFrontEndPlugin<void> = {
       isEnabled: () => true,
       iconClass: 'cpgithub-icon',
       execute: () => {
-        console.log("MAKING POST ")
-        makePostRequest("signout", {}).then(data =>{
+        console.log('MAKING POST ');
+        makePostRequest('signout', {}).then(data => {
           console.log(data);
-          
-        })
+        });
       }
     });
 
-    console.log(palette)
+    console.log(palette);
     // make them pop up at the top of the palette first items on the palleete commands and update rank
-    palette.addItem({command: commandID, category: 'GitHub Copilot', rank: 0});
-    palette.addItem({command: SignOutCommand, category: 'GitHub Copilot', rank: 1});
+    palette.addItem({
+      command: commandID,
+      category: 'GitHub Copilot',
+      rank: 0
+    });
+    palette.addItem({
+      command: SignOutCommand,
+      category: 'GitHub Copilot',
+      rank: 1
+    });
 
     const settings = ServerConnection.makeSettings();
     // notebook tracker is used to keep track of the notebooks that are open
