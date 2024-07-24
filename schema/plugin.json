@@ -1,8 +1,18 @@
 {
   "jupyter.lab.shortcuts": [],
-  "title": "jupyter_copilot",
-  "description": "jupyter_copilot settings.",
+  "title": "Copilot",
+  "description": "Settings for Jupyter Copilot",
   "type": "object",
   "properties": {},
-  "additionalProperties": false
+  "additionalProperties": false,
+  "properties": {
+    "flag": {
+      "type": "boolean",
+      "title": "Enable Copilot",
+      "description": "Enable or Disable Copilot Completions",
+      "default": true
+    }
+  },
+  "additionalProperties": false,
+  "type": "object"
 }

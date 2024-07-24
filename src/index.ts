@@ -17,6 +17,9 @@ import {
 } from '@jupyterlab/completer';
 import { CodeEditor } from '@jupyterlab/codeeditor';
 import { LoginExecute, SignOutExecute } from './commands/authentication';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
+
+let ENABLED_FLAG = true;
 
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
@@ -39,6 +42,10 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
     request: CompletionHandler.IRequest,
     context: IInlineCompletionContext
   ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
+    if (!ENABLED_FLAG) {
+      return { items: [] };
+    }
+
     const now = Date.now();
 
     // debounce mechanism
@@ -111,80 +118,91 @@ const plugin: JupyterFrontEndPlugin<void> = {
   id: 'jupyter_copilot:plugin',
   description: 'GitHub Copilot for Jupyter',
   autoStart: true,
-  requires: [INotebookTracker, ICompletionProviderManager, ICommandPalette],
+  requires: [
+    INotebookTracker,
+    ICompletionProviderManager,
+    ICommandPalette,
+    ISettingRegistry
+  ],
   activate: (
     app: JupyterFrontEnd,
     notebookTracker: INotebookTracker,
     providerManager: ICompletionProviderManager,
-    palette: ICommandPalette
+    palette: ICommandPalette,
+    settingRegistry: ISettingRegistry
   ) => {
+    Promise.all([app.restored, settingRegistry.load(plugin.id)]).then(
+      ([, settings]) => {
+        const loadSettings = () => {
+          ENABLED_FLAG = settings.get('flag').composite as boolean;
+          console.log('Flag is', ENABLED_FLAG);
+        };
+
+        loadSettings();
+
+        settings.changed.connect(loadSettings);
+
+        const command = 'jupyter_copilot:completion';
+        app.commands.addCommand(command, {
+          label: 'Copilot Completion',
+          execute: () => {
+            // get id of current notebook panel
+            const notebookPanelId = notebookTracker.currentWidget?.id;
+            providerManager.inline?.accept(notebookPanelId || '');
+          }
+        });
+
+        app.commands.addKeyBinding({
+          command,
+          keys: ['Ctrl J'],
+          selector: '.cm-editor'
+        });
+
+        const commandID = 'Copilot: Sign In';
+        app.commands.addCommand(commandID, {
+          label: 'Copilot: Sign In With GitHub',
+          iconClass: 'cpgithub-icon',
+          execute: () => LoginExecute(app)
+        });
+
+        const SignOutCommand = 'Copilot: Sign Out';
+        app.commands.addCommand(SignOutCommand, {
+          label: 'Copilot: Sign Out With GitHub',
+          iconClass: 'cpgithub-icon',
+          execute: () => SignOutExecute(app)
+        });
+
+        // make them pop up at the top of the palette first items on the palleete commands and update rank
+        palette.addItem({
+          command: commandID,
+          category: 'GitHub Copilot',
+          rank: 0
+        });
+        palette.addItem({
+          command: SignOutCommand,
+          category: 'GitHub Copilot',
+          rank: 1
+        });
+      }
+    );
+
     const notebookClients = new Map<string, NotebookLSPClient>();
 
     const provider = new CopilotInlineProvider(notebookClients);
     providerManager.registerInlineProvider(provider);
+    // unregister provider
 
-    // TODO: make work
-    // if (settingRegistry) {
-    //   settingRegistry
-    //     .load(plugin.id)
-    //     .then(settings => {
-    //       console.log('jupyter_copilot settings loaded:', settings.composite);
-    //     })
-    //     .catch(reason => {
-    //       console.error('Failed to load settings for jupyter_copilot.', reason);
-    //     });
-    // }
-
-    const command = 'jupyter_copilot:completion';
-    app.commands.addCommand(command, {
-      label: 'Copilot Completion',
-      execute: () => {
-        // get id of current notebook panel
-        const notebookPanelId = notebookTracker.currentWidget?.id;
-        providerManager.inline?.accept(notebookPanelId || '');
-      }
-    });
-
-    app.commands.addKeyBinding({
-      command,
-      keys: ['Ctrl J'],
-      selector: '.cm-editor'
-    });
-
-    const commandID = 'Copilot: Sign In';
-    app.commands.addCommand(commandID, {
-      label: 'Copilot: Sign In With GitHub',
-      iconClass: 'cpgithub-icon',
-      execute: () => LoginExecute(app)
-    });
-
-    const SignOutCommand = 'Copilot: Sign Out';
-    app.commands.addCommand(SignOutCommand, {
-      label: 'Copilot: Sign Out With GitHub',
-      iconClass: 'cpgithub-icon',
-      execute: () => SignOutExecute(app)
-    });
-
-    console.log(palette);
-    // make them pop up at the top of the palette first items on the palleete commands and update rank
-    palette.addItem({
-      command: commandID,
-      category: 'GitHub Copilot',
-      rank: 0
-    });
-    palette.addItem({
-      command: SignOutCommand,
-      category: 'GitHub Copilot',
-      rank: 1
-    });
-
-    const settings = ServerConnection.makeSettings();
+    const serverSettings = ServerConnection.makeSettings();
     // notebook tracker is used to keep track of the notebooks that are open
     // when a new notebook is opened, we create a new LSP client and socket connection for that notebook
 
     notebookTracker.widgetAdded.connect((_, notebook) => {
       notebook.context.ready.then(() => {
-        const wsURL = URLExt.join(settings.wsUrl, 'jupyter-copilot', 'ws');
+        const wsURL = URLExt.join(
+          serverSettings.wsUrl,
+          'jupyter-copilot',
+          'ws'
+        );
         const client = new NotebookLSPClient(notebook.context.path, wsURL);
         notebookClients.set(notebook.id, client);
 
