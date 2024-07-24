@@ -20,10 +20,12 @@ import { LoginExecute, SignOutExecute } from './commands/authentication';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 let ENABLED_FLAG = true;
+let COMPLETION_BIND = 'Ctrl J';
 
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
   readonly identifier = 'jupyter_copilot:provider';
+  readonly rank = 1000;
   notebookClients: Map<string, NotebookLSPClient>;
   private lastRequestTime: number = 0;
   private timeout: any = null;
@@ -135,9 +137,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
       ([, settings]) => {
         const loadSettings = () => {
           ENABLED_FLAG = settings.get('flag').composite as boolean;
-          console.log('Flag is', ENABLED_FLAG);
+          console.log('Settings loaded:', ENABLED_FLAG, COMPLETION_BIND);
         };
 
+        COMPLETION_BIND = settings.get('keybind').composite as string;
         loadSettings();
 
         settings.changed.connect(loadSettings);
@@ -152,10 +155,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
           }
         });
 
+        console.log('babanana');
         app.commands.addKeyBinding({
           command,
-          keys: ['Ctrl J'],
-          selector: '.cm-editor'
+          keys: [COMPLETION_BIND],
+          selector: '.jp-GhostText'
         });
 
         const commandID = 'Copilot: Sign In';
@@ -196,6 +200,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // notebook tracker is used to keep track of the notebooks that are open
     // when a new notebook is opened, we create a new LSP client and socket connection for that notebook
 
+    console.log(serverSettings);
     notebookTracker.widgetAdded.connect((_, notebook) => {
       notebook.context.ready.then(() => {
         const wsURL = URLExt.join(

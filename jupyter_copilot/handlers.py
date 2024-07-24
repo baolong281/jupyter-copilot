@@ -29,8 +29,6 @@ class NotebookManager:
         self._callback = _restart_callback
         lsp_client.register_restart_callback(self._callback)
 
-        logging.info(self.notebook_cells)
-
     def load_notebook(self):
         """
         read the content of the notebook into the cells

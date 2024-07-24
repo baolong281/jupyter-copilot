@@ -3,7 +3,6 @@
   "title": "Copilot",
   "description": "Settings for Jupyter Copilot",
   "type": "object",
-  "properties": {},
   "additionalProperties": false,
   "properties": {
     "flag": {
@@ -11,8 +10,12 @@
       "title": "Enable Copilot",
       "description": "Enable or Disable Copilot Completions",
       "default": true
+    },
+    "keybind": {
+      "type": "string",
+      "title": "Accept Completion Keybind",
+      "description": "Keybinding to trigger Copilot Completions",
+      "default": "Ctrl J"
     }
-  },
-  "additionalProperties": false,
-  "type": "object"
+  }
 }
