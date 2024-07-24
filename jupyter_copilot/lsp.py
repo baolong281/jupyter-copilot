@@ -45,6 +45,7 @@ class LSPWrapper:
 
         self.wait(500)
         self.__send_startup_notification()
+        self.logger.debug("[Copilot] LSP server started successfully")
 
     def register_restart_callback(self, callback: Callable[[], None]):
         self.restart_callbacks.append(callback)
@@ -56,7 +57,7 @@ class LSPWrapper:
 
     def __spawn_process(self) -> subprocess.Popen[str]:
         """ spawns LSP process then returns it"""
-        self.logger.info("Spawning LSP process with command %s", self.spawn_command)
+        self.logger.debug("[Copilot] Spawning LSP process with command %s", self.spawn_command)
         try:
             # start the process and throw an error if it fails
             process = subprocess.Popen(
@@ -89,6 +90,7 @@ class LSPWrapper:
         send the initialize request to the lsp server
         must be called after the server has started
         """
+        self.logger.debug("[Copilot] Sending initialize request to LSP server")
         self.send_request("initialize", {
             "capabilities": {"workspace": {"workspaceFolders": True}}
         })
@@ -123,7 +125,7 @@ class LSPWrapper:
         this should run in a seperate thread
         """
         with self.restart_lock:
-            self.logger.info("Restarting LSP server...")
+            self.logger.debug("[Copilot] Restarting LSP server...")
             if self.process:
                 self.process.terminate()
                 self.process.wait()
@@ -162,7 +164,7 @@ class LSPWrapper:
                 return
             # if the process is not running, restart it
             elif process_return_code != 0:
-                self.logger.info("LSP server process has stopped. Attempting to restart...")
+                self.logger.debug("[Copilot] LSP server process has stopped. Attempting to restart...")
 
                 self.__create_restart_thread()
 
@@ -260,7 +262,6 @@ class LSPWrapper:
         handle the payload from the lsp server 
         if the payload has an id, then call the resolve or reject callback
         """
-        self.logger.info("payload: %s", payload)
         if "id" in payload:
             if "result" in payload:
                 # pop from map then call

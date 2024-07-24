@@ -3,11 +3,13 @@ from typing import Any, Dict
 from tornado.ioloop import IOLoop
 from tornado.websocket import WebSocketHandler
 from jupyter_server.utils import url_path_join
+import logging
 import json
 import nbformat
 import os
 from jupyter_copilot.lsp import LSPWrapper
 from jupyter_server.base.handlers import APIHandler
+from jupyter_server.base.handlers import JupyterHandler
 
 class NotebookManager:
     """ 
@@ -28,6 +30,7 @@ class NotebookManager:
 
         self._callback = _restart_callback
         lsp_client.register_restart_callback(self._callback)
+        logging.debug("[Copilot] Notebook manager initialized for %s", self.path)
 
     def load_notebook(self):
         """
@@ -51,7 +54,6 @@ class NotebookManager:
         if nb.metadata and nb.metadata.kernelspec:
             self.language = nb.metadata.kernelspec.language.lower()
 
-        logging.info("Sending open signal to LSP")
         lsp_client.send_notification("textDocument/didOpen", {
             "textDocument": {
                 "uri": f"file:///{self.path}",
@@ -65,7 +67,7 @@ class NotebookManager:
 
     def extract_code_cells(self, notebook):
         """ extract code cells from a notebook into a list of strings """
-        return [cell.source for cell in notebook.cells if (cell.cell_type == "code")]
+        return [cell.source for cell in notebook.cells if (cell.cell_type == "code" or cell.cell_type == "markdown")]
 
     def delete_cell(self, cell_id):
         """ deletes a cell id from the array if it exists """
@@ -86,12 +88,10 @@ class NotebookManager:
             for _ in range(cell_id - len(self.notebook_cells)):
                 self.notebook_cells.append('')
             self.notebook_cells.append(content)
-        logging.info(f"Added cell {cell_id}")
 
 
     def update_cell(self, cell_id, content):
         """ index into array and update the cell content if it exists """
-        logging.info(f"Updating cell {cell_id}")
         if 0 <= cell_id < len(self.notebook_cells):
             self.notebook_cells[cell_id] = content
         else:
@@ -112,7 +112,7 @@ class NotebookManager:
             },
             "contentChanges": [{"text": code}]
         })
-        logging.info("SENDING FULL UPDATE")
+        logging.debug("[Copilot] Sending full update for %s", self.path)
 
     def request_completion(self, cell_id: int, line: int, character: int) -> Dict[str, Any]:
         """ 
@@ -120,6 +120,7 @@ class NotebookManager:
         then returns the response
         """
         line = self.__get_absolute_line_num(cell_id, line)
+        logging.debug(f"[Copilot] Requesting completion for cell {cell_id}, line {line}, character {character}")
         response = lsp_client.send_request("getCompletions", {
             "doc": {
                 "uri": f"file:///{self.path}",
@@ -157,7 +158,7 @@ class NotebookManager:
 
     def send_close_signal(self):
         """ send a close signal to the lsp server """
-        logging.info("Sending close signal to LSP")
+        logging.debug("[Copilot] Sending close signal to LSP for %s", self.path)
         lsp_client.send_notification("textDocument/didClose", {
             "textDocument": {
                 "uri": f"file:///{self.path}"
@@ -179,7 +180,7 @@ class NotebookManager:
                 "text": self.get_full_code()
             }
         })
-        logging.info(f"Language set to {language}")
+        logging.debug(f"[Copilot] Language set to {language}")
 
 
 class NotebookLSPHandler(WebSocketHandler):
@@ -194,6 +195,7 @@ class NotebookLSPHandler(WebSocketHandler):
         notebook_path = self.get_argument('path', '')
         self.notebook_manager = NotebookManager(notebook_path)
         await self.send_message('connection_established', {})
+        logging.debug("[Copilot] WebSocket opened")
 
     async def on_message(self, message):
         try:
@@ -292,7 +294,7 @@ class NotebookLSPHandler(WebSocketHandler):
             logging.error(f"Error sending message: {e}")
 
     def on_close(self):
-        logging.info("WebSocket closed")
+        logging.debug("[Copilot] WebSocket closed")
 
         if self.notebook_manager is None:
             raise Exception("Notebook manager not initialized")
@@ -303,7 +305,7 @@ class NotebookLSPHandler(WebSocketHandler):
         lsp_client.unregister_restart_callback(self.notebook_manager._callback)
         self.notebook_manager = None
 
-class AuthHandler(APIHandler):
+class AuthHandler(JupyterHandler):
     async def post(self, action):
         if action == "login":
             res = lsp_client.send_request("signInInitiate", {})
@@ -313,7 +315,6 @@ class AuthHandler(APIHandler):
             self.set_status(404)
             res = {"error": "Invalid action"}
 
-        logging.info(res)
         self.finish(res)
         
 def setup_handlers(server_app):
@@ -330,7 +331,7 @@ def setup_handlers(server_app):
         (url_path_join(base_url, "ws"), NotebookLSPHandler),
         (url_path_join(base_url, "(.+)"), AuthHandler)
     ]
-    logging.info("base url: %s", base_url)
+    logging.info("[Copilot] Copilot Base URL: %s", base_url)
     web_app.add_handlers(host_pattern, handlers)
 
 
