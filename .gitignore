@@ -120,3 +120,5 @@ dmypy.json
 # Yarn cache
 .yarn/
 .copilot_token
+notebooks
+notebooks/*

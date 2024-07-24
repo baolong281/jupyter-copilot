@@ -1,29 +1,49 @@
 # jupyter_copilot
 
 [![Github Actions Status](/workflows/Build/badge.svg)](/actions/workflows/build.yml)
+
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh//main?urlpath=lab)
 
-GitHub Copilot for Jupyter
+GitHub Copilot extension for JupyterLab. This extension uses the language server provided by [copilot.vim](https://github.com/github/copilot.vim) and the [@jupyter/completer](https://jupyterlab.readthedocs.io/en/latest/user/completer.html) module to provide native GitHub Copilot autocomplete into notebooks.
 
----
+![Demo Gif](./imgs/demo.gif)
 
-This extension is composed of a Python package named `jupyter_copilot`
-for the server extension and a NPM package named `jupyter_copilot`
-for the frontend extension.
+## Features
+
+WARNING: This extension is still very new and may be rough around the edges. If you experience any bugs or have any feature requests please let me know :)
+
+- Inline completions with GitHub Copilot 🤖
+- Native GitHub authentication 🔐
+- Custom keybindings 🔥
 
 ## **Requirements**
 
 - JupyterLab >= 4.0.0
+- Node.js
 
-## Install
+## Setup
 
 To install the extension, execute:
-
-(ignore this cant actually do this yet)
 
 ```bash
 pip install jupyter_copilot
 ```
+
+To login to copilot open the command palette with `Ctrl+Shift+C` (`Cmd+Shift+C` on mac) then select the `Sign In With Github` command and follow the instructions.
+
+![](./imgs/login.png)
+![](./imgs/auth.png)
+
+Once signed in open any notebook and the extension should run!
+
+## Settings
+
+To change settings go to `Settings > Settings Editor` then search for Copilot.
+
+| Setting        | Description                                                                                                                                                                                                                                                           |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enable/Disable | Enables or disables the extension                                                                                                                                                                                                                                     |
+| Accept Keybind | The keybind you want to use to accept a completion, default value is `Ctrl + J`. This setting is just a string and is not validated to see if works. Currently using `Tab` for completions does not work, and you must refresh the notebook to see changes in effect. |
 
 ## Uninstall
 
@@ -104,48 +124,45 @@ folder is located. Then you can remove the symlink named `jupyter_copilot` withi
 
 ### Layout and structure
 
-There a tutorial [here](https://jupyterlab.readthedocs.io/en/latest/extension/extension_tutorial.html) which should have everything you need to make extensions.
-
-The extension has two parts, the frontend that runs in the notebook which is located in `/src`, and the backend server located in `/jupyter_copilot`. The that way Jupyter works is it has a frontend notebook in the browser, then a local server that the notebook can make requests to.
-
 ![](./imgs/diagram.png)
 
-At a high level there are three parts, the extension frontend which runs in the notebook, the extension local server that handles logic and processes, and the Copilot LSP server which actually creates the Copilot completions.
+This extension is composed of a Python package named `jupyter_copilot`
+for the server extension and a NPM package named `jupyter_copilot`
+for the frontend extension.
 
-The frontend and local server are connected to each other via websocket so they can communicate with each other. Whenever changes in a notebook are made or a completion should be generated the frontend will send a message to the local server to do that.
+The extension uses the language server provided by [copilot.vim](https://github.com/github/copilot.vim) for authentication and to actually fetch completions from GitHub. The language server is packaged as a node module caleld [copilot-node-server](https://github.com/jfcherng/copilot-node-server).
 
-The purpose of the local server is to keep track of updates from the frontend, and communicate with the LSP server. When the frontend wants a completion the local server will forward it to the LSP and send the result back to the frontend.
-
-The node.js copilot server is a LSP server that will actually invoke GitHub Copilot endpoints. I did not write it, and it is contained in a [node package](https://www.npmjs.com/package/copilot-node-server?activeTab=dependents), and was taken from the vim implementation of copilot.
-
-## `src/`
-
-This is where all the frontend code lives. In `index.js` is the main code and event listeners, that listen for changes in notebook such as content change, adding and deleting cells, and opening and closing notebooks. When one of these events happens there's some logic that needs to be send to the local server, the interface with the local server is in `lsp.ts` which has the relevant methods to send messages to the local server.
-
-![](./imgs/console.png)
-
-Whenever a cell is added, swapped, removed, or changed the frontend will send a message to the local server to update its representation of the notebook. Currently `Ctrl+J` will call a completion for whever the cursor is located by calling the `getCompletionAtCursorMethod`.
+The frontend is connected to the local extension server via websocket for updates to notebooks and to fetch completions from the LSP server.
 
 ## `jupyter_copilot`
 
-This is the code for the local server. `handler.py` has the handles any websocket messages from the frontend through a queue as to not break stuff. The handling of websocket messages is done in `NotebookLSPHandler`. There is another class `NotebookHandler` which creates an in-memory representation of the code from a notebook. This works by having an array for each code block, then indexing into the array and changing its content when theres an update. There is a single instance of this class and all updates in `handlers.py` update the instantiated class. This class will also make calls communicate with the LSP.
+This is the code for the local server. `handler.py` has the handles any websocket messages from the frontend through a queue as to not break stuff. The handling of websocket messages is done in `NotebookLSPHandler`. There is another class `NotebookHandler` which creates an in-memory representation of the code from a notebook. This works by having an array for each code block, then indexing into the array and changing its content when theres an update. This class also uses the `lsp_client` to communicate with the LSP server.
 
-The actual node.js Copilot LSP server is spawned in as a process in `lsp.py`. The server is located in `node_modules/copilot-node-server/dist/copilot/language-server.js` and is spawned as. `lsp.py` provides an interface to communicate with this LSP server, and is basically done and not important.
-
-Whenever you the `jupyter lab` command, that output of that are the logs from the local Jupyter servers, which includes the one for our extension. Instead of printing to debug, instead call `logging.info`, then the output will be visible in that terminal.
-
-![](./imgs/terminal.png)
-
-Stuff prepended with _payload_ and _jsonrpc_ is the output from the language server
+The actual node.js Copilot LSP server is spawned in as a process in `lsp.py`. The server is located in `node_modules/copilot-node-server/dist/copilot/language-server.js` and is spawned as. `lsp.py` provides an interface to communicate with this LSP server, and restart if it crashes.
 
 **When you make changes to this folder `npm run watch` will not detect the change, so you need to restart the Jupyter instance in the terminal to see changes take effect**
 
 ## TODO
 
-- There is no way to get authenticated with GitHub at the moment. I have no idea how the LSP server handles authentication, but it uses the same scheme as the Copilot.vim plugin which is why it works for me. This [stack overflow](https://stackoverflow.com/a/77659136) perfectly explains it and tells you exactly where to find the implementation of it. There should be a command in the command palette that when run, signs the user in through GitHub with the authentication code. This will require making a new UI element, and a new HTTP handler called `login` or something on the local python server. #update Authentication happens by sending a Request to the LSP server with the message, "signInConfirm" "signInInitiate" "signInWithGithubToken" or "signOut". All the code to send these messages is there, this should be easy to do.
-- There should be a setting somewhere to deactivate the plugin
-- Run tests and find bugs
-- Test if it works in regular jupyter and port it
+- Completions inside brackets
+- Find out a better keybind system
+- Custom providers (?)
+- Port to notebooks (?)
+
+---
+
+\
+Huge thank you to these projects ❤️
+
+[copilot.vim](https://github.com/github/copilot.vim)
+
+[LSP-copilot](https://github.com/TerminalFi/LSP-copilot)
+
+[copilot-node-server](https://github.com/jfcherng/copilot-node-server)
+
+[copilot.lua](https://www.google.com/search?q=copilot.lua&oq=copilot.lua&aqs=chrome..69i57j0i512j35i39i512i650j69i60j5i44l2.1196j0j4&sourceid=chrome&ie=UTF-8)
+
+[stackoverflow post](https://stackoverflow.com/questions/76741410/how-to-invoke-github-copilot-programmatically)
 
 ### Packaging the extension
 
