@@ -155,15 +155,14 @@ const plugin: JupyterFrontEndPlugin<void> = {
           }
         });
 
-        console.log('babanana');
         app.commands.addKeyBinding({
           command,
           keys: [COMPLETION_BIND],
           selector: '.jp-GhostText'
         });
 
-        const commandID = 'Copilot: Sign In';
-        app.commands.addCommand(commandID, {
+        const SignInCommand = 'Copilot: Sign In';
+        app.commands.addCommand(SignInCommand, {
           label: 'Copilot: Sign In With GitHub',
           iconClass: 'cpgithub-icon',
           execute: () => LoginExecute(app)
@@ -178,7 +177,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         // make them pop up at the top of the palette first items on the palleete commands and update rank
         palette.addItem({
-          command: commandID,
+          command: SignInCommand,
           category: 'GitHub Copilot',
           rank: 0
         });
@@ -200,7 +199,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // notebook tracker is used to keep track of the notebooks that are open
     // when a new notebook is opened, we create a new LSP client and socket connection for that notebook
 
-    console.log(serverSettings);
     notebookTracker.widgetAdded.connect((_, notebook) => {
       notebook.context.ready.then(() => {
         const wsURL = URLExt.join(
@@ -214,6 +212,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
         notebook.sessionContext.ready.then(() => {
           notebook.sessionContext.session?.kernel?.info.then(info => {
             client.setNotebookLanguage(info.language_info.name);
+          });
+
+          notebook.sessionContext.kernelChanged.connect(async (_, kernel) => {
+            const info = await kernel.newValue?.info;
+            client.setNotebookLanguage(info?.language_info.name as string);
           });
         });
 
