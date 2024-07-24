@@ -15,10 +15,7 @@ class LSPWrapper:
     """
     def __init__(self, logger):
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(current_dir)
-        lsp_path = os.path.join(
-            parent_dir, "node_modules", "copilot-node-server", "copilot", "dist", "language-server.js")
-
+        lsp_path = os.path.join(current_dir, "dist", "language-server.js")
         self.spawn_command = ["node", lsp_path, "--stdio"]
 
 
