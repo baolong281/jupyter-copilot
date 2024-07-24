@@ -4,7 +4,7 @@
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh//main?urlpath=lab)
 
-GitHub Copilot extension for JupyterLab. This extension uses the language server provided by [copilot.vim](https://github.com/github/copilot.vim) and the [@jupyter/completer](https://jupyterlab.readthedocs.io/en/latest/user/completer.html) module to provide native GitHub Copilot autocomplete into notebooks.
+A GitHub Copilot extension for JupyterLab. This extension uses the language server provided by [copilot.vim](https://github.com/github/copilot.vim) and the [@jupyter/completer](https://jupyterlab.readthedocs.io/en/latest/user/completer.html) module to provide native GitHub Copilot autocomplete into notebooks.
 
 ![Demo Gif](./imgs/demo.gif)
 
@@ -15,6 +15,7 @@ WARNING: This extension is still very new and may be rough around the edges. If 
 - Inline completions with GitHub Copilot 🤖
 - Native GitHub authentication 🔐
 - Custom keybindings 🔥
+- Multilanguage support
 
 ## **Requirements**
 
@@ -146,6 +147,7 @@ The actual node.js Copilot LSP server is spawned in as a process in `lsp.py`. Th
 
 - Completions inside brackets
 - Find out a better keybind system
+- Copilot chat (?)
 - Custom providers (?)
 - Port to notebooks (?)
 
@@ -163,6 +165,8 @@ Huge thank you to these projects ❤️
 [copilot.lua](https://www.google.com/search?q=copilot.lua&oq=copilot.lua&aqs=chrome..69i57j0i512j35i39i512i650j69i60j5i44l2.1196j0j4&sourceid=chrome&ie=UTF-8)
 
 [stackoverflow post](https://stackoverflow.com/questions/76741410/how-to-invoke-github-copilot-programmatically)
+
+[GitHub Copilot](https://github.com/features/copilot)
 
 ### Packaging the extension
 
