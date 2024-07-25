@@ -20,7 +20,7 @@ WARNING: This extension is still very new and may be rough around the edges. If 
 ## **Requirements**
 
 - JupyterLab >= 4.0.0
-- Node.js
+- Node.js >= 18.x
 
 ## Setup
 
