@@ -6,7 +6,7 @@
 
 A GitHub Copilot extension for JupyterLab. This extension uses the language server provided by [copilot.vim](https://github.com/github/copilot.vim) and the [@jupyter/completer](https://jupyterlab.readthedocs.io/en/latest/user/completer.html) module to provide native GitHub Copilot autocomplete into notebooks.
 
-![](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif)
+![https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif?raw=true)
 
 ## Features
 
@@ -32,8 +32,8 @@ pip install jupyter_copilot
 
 To login to copilot open the command palette with `Ctrl+Shift+C` (`Cmd+Shift+C` on mac) then select the `Sign In With Github` command and follow the instructions.
 
-![](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/login.png)
-![](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/auth.png)
+![https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/login.png](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/login.png?raw=true)
+![https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/auth.png](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/auth.png?raw=true)
 
 Once signed in open any notebook and the extension should run!
 
@@ -125,7 +125,7 @@ folder is located. Then you can remove the symlink named `jupyter_copilot` withi
 
 ### Layout and structure
 
-![](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/diagram.png)
+![https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/diagram.png](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/diagram.png?raw=true)
 
 This extension is composed of a Python package named `jupyter_copilot`
 for the server extension and a NPM package named `jupyter_copilot`
