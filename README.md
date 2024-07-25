@@ -1,9 +1,5 @@
 # jupyter_copilot
 
-[![Github Actions Status](/workflows/Build/badge.svg)](/actions/workflows/build.yml)
-
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh//main?urlpath=lab)
-
 A GitHub Copilot extension for JupyterLab. This extension uses the language server provided by [copilot.vim](https://github.com/github/copilot.vim) and the [@jupyter/completer](https://jupyterlab.readthedocs.io/en/latest/user/completer.html) module to provide native GitHub Copilot autocomplete into notebooks.
 
 ![https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif?raw=true)
