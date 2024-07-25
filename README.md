@@ -6,9 +6,12 @@ A GitHub Copilot extension for JupyterLab. This extension uses the language serv
 
 ![https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif?raw=true)
 
-## Features
 
-WARNING: This extension is still very new and may be rough around the edges. If you experience any bugs or have any feature requests please let me know :)
+**⚠️ WARNING: You should not use this for remote notebooks over SSH as authentication for the extension server  is currently disabled. Also, This extension also only supports JupyterLab and not classic notebooks :(**
+
+**This extension is still very new and may be rough around the edges. If you experience any bugs or have any feature requests please let me know :)**
+
+## Features
 
 - Inline completions with GitHub Copilot 🤖
 - Native GitHub authentication 🔐
