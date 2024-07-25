@@ -7,9 +7,9 @@
         "jupyterlab",
         "jupyterlab-extension"
     ],
-    "homepage": "",
+    "homepage": "https://github.com/baolong281/jupyter-copilot",
     "bugs": {
-        "url": "/issues"
+        "url": "https://github.com/baolong281/jupyter-copilot/issues"
     },
     "license": "BSD-3-Clause",
     "author": {
@@ -27,7 +27,7 @@
     "style": "style/index.css",
     "repository": {
         "type": "git",
-        "url": ".git"
+        "url": "https://github.com/baolong281/jupyter-copilot.git"
     },
     "scripts": {
         "build": "jlpm build:lib && jlpm build:labextension:dev",
@@ -65,8 +65,7 @@
         "@jupyterlab/notebook": "^4.2.4",
         "@jupyterlab/services": "^7.0.0",
         "@jupyterlab/settingregistry": "^4.0.0",
-        "@lumino/widgets": "^2.4.0",
-        "copilot-node-server": "^1.38.0"
+        "@lumino/widgets": "^2.4.0"
     },
     "devDependencies": {
         "@jupyterlab/builder": "^4.0.0",
