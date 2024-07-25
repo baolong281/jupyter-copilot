@@ -122,3 +122,5 @@ dmypy.json
 .copilot_token
 notebooks
 notebooks/*
+
+!jupyter_copilot/dist
