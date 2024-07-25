@@ -34,13 +34,16 @@ source = "nodejs"
 fields = ["description", "authors", "urls"]
 
 [tool.hatch.build.targets.sdist]
-artifacts = ["jupyter_copilot/labextension"]
+artifacts = ["jupyter_copilot/labextension", "jupyter_copilot/dist"]
 exclude = [".github", "binder"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "jupyter_copilot/labextension" = "share/jupyter/labextensions/jupyter_copilot"
 "install.json" = "share/jupyter/labextensions/jupyter_copilot/install.json"
 "jupyter-config/server-config" = "etc/jupyter/jupyter_server_config.d"
+
+[tool.hatch.build.targets.wheel.force-include]
+"jupyter_copilot/dist" = "jupyter_copilot/dist"
 
 [tool.hatch.build.hooks.version]
 path = "jupyter_copilot/_version.py"
