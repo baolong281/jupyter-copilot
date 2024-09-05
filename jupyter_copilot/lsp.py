@@ -109,8 +109,7 @@ class LSPWrapper:
             # if exit code is 130, ctrl + c was pressed in terminal
             # printing will mess up the exit confirmation
             if self.process.returncode != 130:
-                self.logger.error(f"LSP server process has terminated. Exit code: {
-                    self.process.returncode}")
+                self.logger.error(f"LSP server process has terminated. Exit code: {self.process.returncode}")
                 self.logger.error("stderr output:")
 
             return self.process.returncode
@@ -157,6 +156,8 @@ class LSPWrapper:
             process_return_code = self.is_process_running()
             # if ctrl + c just exit the thread
             # process should have already been killed
+            # if you press ctrl + c but cancel then the LSP will be killed and you have to restart the program
+            # fix this later 
             if process_return_code == 130:
                 return
             # if the process is not running, restart it
@@ -193,8 +194,7 @@ class LSPWrapper:
     def __send_message(self, data: dict):
         """ send message with lsp format to lsp server """
         if self.is_process_running() != 0:
-            raise RuntimeError(
-                "The LSP server process has terminated unexpectedly.")
+            raise RuntimeError("The LSP server process has terminated unexpectedly.")
 
         message = json.dumps({**data, "jsonrpc": "2.0"})
         content_length = len(message.encode('utf-8'))
@@ -206,8 +206,7 @@ class LSPWrapper:
             self.process.stdin.write(rpc_message)
             self.process.stdin.flush()
         except BrokenPipeError:
-            self.logger.error(
-                "Error: Broken pipe. The LSP server process may have terminated unexpectedly.")
+            self.logger.error("Error: Broken pipe. The LSP server process may have terminated unexpectedly.")
             # restart the server in new thread
             raise
 
@@ -220,8 +219,7 @@ class LSPWrapper:
         and will run the resolve or reject callback
         """
         self.request_id += 1
-        self.__send_message(
-            {"id": self.request_id, "method": method, "params": params})
+        self.__send_message({"id": self.request_id, "method": method, "params": params})
         result = threading.Event()
         response = {}
     
@@ -244,8 +242,7 @@ class LSPWrapper:
 
         # at this point if a response has not been received then result will not be set, so we throw an error
         if not result.is_set():
-            raise TimeoutError(f"Request timed out: method={
-                               method}, id={self.request_id}")
+            raise TimeoutError(f"Request timed out: method={method}, id={self.request_id}")
 
         if 'error' in response:
             raise Exception(response['error'])

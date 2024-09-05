@@ -18,18 +18,37 @@ interface Completion {
 }
 
 class NotebookLSPClient {
-  private socket: WebSocket;
+  private socket: WebSocket | undefined;
   private pendingCompletions: Map<
     string,
     { resolve: (value: any) => void; reject: (reason?: any) => void }
   > = new Map();
+  private wsUrl: string;
 
   constructor(notebookPath: string, wsUrl: string) {
-    wsUrl = `${wsUrl}?path=${encodeURI(notebookPath)}`;
-    this.socket = new WebSocket(wsUrl);
+    this.wsUrl = `${wsUrl}?path=${encodeURIComponent(notebookPath)}`;
+    this.initializeWebSocket();
+  }
+
+  private initializeWebSocket() {
+    this.socket = new WebSocket(this.wsUrl);
+    this.setupSocketEventHandlers();
+  }
+
+  private setupSocketEventHandlers() {
+    if (!this.socket) {
+      return;
+    }
+
     this.socket.onmessage = this.handleMessage.bind(this);
     this.socket.onopen = () => this.sendMessage('sync_request', {});
+    this.socket.onclose = this.handleSocketClose;
   }
+
+  private handleSocketClose = () => {
+    console.log('Socket connection closed, reconnecting...');
+    this.initializeWebSocket();
+  };
 
   // Handle messages from the extension server
   private handleMessage(event: MessageEvent) {
@@ -99,7 +118,7 @@ class NotebookLSPClient {
   }
 
   private sendMessage(type: string, payload: any) {
-    this.socket.send(JSON.stringify({ type, ...payload }));
+    this.socket?.send(JSON.stringify({ type, ...payload }));
   }
 
   public sendPathChange(newPath: string) {
@@ -112,7 +131,7 @@ class NotebookLSPClient {
 
   // cleans up the socket connection
   public dispose() {
-    this.socket.close();
+    this.socket?.close();
     console.log('socket connection closed');
   }
 }
