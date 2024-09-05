@@ -156,6 +156,8 @@ class LSPWrapper:
             process_return_code = self.is_process_running()
             # if ctrl + c just exit the thread
             # process should have already been killed
+            # if you press ctrl + c but cancel then the LSP will be killed and you have to restart the program
+            # fix this later 
             if process_return_code == 130:
                 return
             # if the process is not running, restart it
