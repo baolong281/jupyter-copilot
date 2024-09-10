@@ -9,7 +9,7 @@ A GitHub Copilot extension for JupyterLab. This extension uses the language serv
 
 **⚠️ WARNING: You should not use this for remote notebooks over SSH as authentication for the extension server  is currently disabled. Also, This extension also only supports JupyterLab and not classic notebooks :(**
 
-**This extension is still very new and may be rough around the edges. If you experience any bugs or have any feature requests please let me know :)**
+**This extension is still very new and may be rough around the edges. If you experience any bugs or have any feature requests please feel free to open an issue or make a PR :)**
 
 ## Features
 
