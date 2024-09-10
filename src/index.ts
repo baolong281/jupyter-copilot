@@ -2,6 +2,7 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { IDisposable } from '@lumino/disposable';
 import { INotebookTracker } from '@jupyterlab/notebook';
 import { ServerConnection } from '@jupyterlab/services';
 import { URLExt } from '@jupyterlab/coreutils';
@@ -130,34 +131,42 @@ const plugin: JupyterFrontEndPlugin<void> = {
     settingRegistry: ISettingRegistry
   ) => {
     console.log('Jupyter Copilot Extension Activated');
+
+    const command = 'jupyter_copilot:completion';
+
+    app.commands.addCommand(command, {
+      label: 'Copilot Completion',
+      execute: () => {
+        // get id of current notebook panel
+        const notebookPanelId = notebookTracker.currentWidget?.id;
+        providerManager.inline?.accept(notebookPanelId || '');
+      }
+    });
+
     Promise.all([app.restored, settingRegistry.load(plugin.id)]).then(
       ([, settings]) => {
-        const loadSettings = () => {
+        let keybindingDisposer: IDisposable | null = null;
+        const loadSettings = (settings: ISettingRegistry.ISettings) => {
           ENABLED_FLAG = settings.get('flag').composite as boolean;
+          COMPLETION_BIND = settings.get('keybind').composite as string;
           console.log('Settings loaded:', ENABLED_FLAG, COMPLETION_BIND);
+
+          if (keybindingDisposer) {
+            const currentKeys = app.commands.keyBindings.find(kb => kb.command === command)?.keys;
+            console.log("Disposing old keybinding ", currentKeys)
+            keybindingDisposer.dispose();
+            keybindingDisposer = null;
+          }
+          keybindingDisposer = app.commands.addKeyBinding({
+            command,
+            keys: [COMPLETION_BIND],
+            selector: '.cm-editor'
+          });
         };
 
-        COMPLETION_BIND = settings.get('keybind').composite as string;
-        loadSettings();
+        loadSettings(settings);
 
         settings.changed.connect(loadSettings);
-
-        const command = 'jupyter_copilot:completion';
-        app.commands.addCommand(command, {
-          label: 'Copilot Completion',
-          execute: () => {
-            // get id of current notebook panel
-            const notebookPanelId = notebookTracker.currentWidget?.id;
-            providerManager.inline?.accept(notebookPanelId || '');
-          }
-        });
-
-        app.commands.addKeyBinding({
-          command,
-          keys: [COMPLETION_BIND],
-          selector: '.cm-editor'
-        });
-
         const SignInCommand = 'Copilot: Sign In';
         app.commands.addCommand(SignInCommand, {
           label: 'Copilot: Sign In With GitHub',
