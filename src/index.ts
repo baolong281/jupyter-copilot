@@ -19,6 +19,7 @@ import {
 import { CodeEditor } from '@jupyterlab/codeeditor';
 import { LoginExecute, SignOutExecute } from './commands/authentication';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
+import { makePostRequest } from './utils';
 
 class GlobalSettings {
   enabled: boolean;
@@ -29,6 +30,16 @@ class GlobalSettings {
     this.enabled = true;
     this.completionBind = 'Ctrl J';
     this.authenticated = false;
+
+    makePostRequest('login', {})
+      .then(response => {
+        const res = JSON.parse(response) as any;
+        this.authenticated = res.status === 'AlreadySignedIn';
+        console.log(this.authenticated);
+      })
+      .catch(error => {
+        console.error('Error checking authentication state:', error);
+      });
   }
 
   setEnabled(enabled: boolean) {
