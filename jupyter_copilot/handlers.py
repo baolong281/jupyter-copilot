@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, List
 from tornado.ioloop import IOLoop
 from tornado.websocket import WebSocketHandler
 from jupyter_server.utils import url_path_join
@@ -16,7 +16,7 @@ class NotebookManager:
     notebook code is stored in an array of strings, each string representing a cell
     on an update we update the cell index in the array
     """
-    def __init__(self, path):
+    def __init__(self, path: str) -> None:
         self.path = path
         # remove leading slash for name
         self.name = path[1:] if path.startswith("/") else path
@@ -33,7 +33,7 @@ class NotebookManager:
         lsp_client.register_restart_callback(self._callback)
         logging.debug("[Copilot] Notebook manager initialized for %s", self.path)
 
-    def load_notebook(self):
+    def load_notebook(self) -> List[str]:
         """
         read the content of the notebook into the cells
         only runs on the first sync / when the notebook is opened
@@ -66,18 +66,18 @@ class NotebookManager:
 
         return code
 
-    def extract_code_cells(self, notebook):
+    def extract_code_cells(self, notebook: nbformat.NotebookNode) -> List[str]:
         """ extract code cells from a notebook into a list of strings """
         return [cell.source for cell in notebook.cells if (cell.cell_type == "code" or cell.cell_type == "markdown")]
 
-    def delete_cell(self, cell_id):
+    def delete_cell(self, cell_id: int) -> None:
         """ deletes a cell id from the array if it exists """
         if 0 <= cell_id < len(self.notebook_cells):
             self.notebook_cells.pop(cell_id)
         else:
             logging.error(f"Cell {cell_id} does not exist")
 
-    def add_cell(self, cell_id, content):
+    def add_cell(self, cell_id: int, content: str) -> None:
         """ 
         inserts a cell into the array at the given index
         if the cell index is larger than the length, make a blunch of blank cells
@@ -91,18 +91,18 @@ class NotebookManager:
             self.notebook_cells.append(content)
 
 
-    def update_cell(self, cell_id, content):
+    def update_cell(self, cell_id: int, content: str) -> None:
         """ index into array and update the cell content if it exists """
         if 0 <= cell_id < len(self.notebook_cells):
             self.notebook_cells[cell_id] = content
         else:
             logging.error(f"Cell {cell_id} does not exist")
 
-    def get_full_code(self):
+    def get_full_code(self) -> str:
         """ return the full code of the notebook as a string """
         return "\n\n".join(self.notebook_cells)
 
-    def send_full_update(self):
+    def send_full_update(self) -> None:
         """ sends an update to the lsp with the latest code """
         self.document_version += 1
         code = self.get_full_code()
@@ -139,7 +139,7 @@ class NotebookManager:
         """
         return sum([len(cell.split('\n')) for cell in self.notebook_cells[:cellId]]) + line + cellId
 
-    def handle_path_change(self, path):
+    def handle_path_change(self, path: str) -> None:
         """ on path change, send close signal to lsp and open signal with new path """
 
         self.send_close_signal()
@@ -158,7 +158,7 @@ class NotebookManager:
 
         logging.debug(f"[Copilot] Path changed to {self.path}")
 
-    def send_close_signal(self):
+    def send_close_signal(self) -> None:
         """ send a close signal to the lsp server """
         logging.debug("[Copilot] Sending close signal to LSP for %s", self.path)
         lsp_client.send_notification("textDocument/didClose", {
@@ -167,7 +167,7 @@ class NotebookManager:
             }
         })
 
-    def set_language(self, language):
+    def set_language(self, language: str) -> None:
         """ 
         closes and opens the lsp server with the new language
         this runs whenever a notebook is initially loaded
@@ -187,7 +187,7 @@ class NotebookManager:
 
 class NotebookLSPHandler(WebSocketHandler):
     def initialize(self):
-        self.notebook_manager = None
+        self.notebook_manager: NotebookManager | None = None
         # we need a queue so that we can fully process one request before moving onto the next
         self.message_queue = asyncio.Queue()
         # register functino to run in the background
@@ -311,7 +311,8 @@ class NotebookLSPHandler(WebSocketHandler):
         self.notebook_manager = None
 
 class AuthHandler(JupyterHandler):
-    async def post(self, action):
+    async def post(self):
+        action = self.request.path.split("/")[-1]
         if action == "login":
             res = lsp_client.send_request("signInInitiate", {})
         elif action == "signout":
@@ -332,13 +333,17 @@ def setup_handlers(server_app):
     global lsp_client
     lsp_client = LSPWrapper(logging)
 
-
     web_app = server_app.web_app
     host_pattern = ".*$"
     base_url = web_app.settings["base_url"] + "jupyter-copilot"
     handlers = [
         (url_path_join(base_url, "ws"), NotebookLSPHandler),
-        (url_path_join(base_url, "(.+)"), AuthHandler)
+        (url_path_join(base_url, "login"), AuthHandler),
+        (url_path_join(base_url, "signout"), AuthHandler),
     ]
     web_app.add_handlers(host_pattern, handlers)
+
+    for handler in handlers:
+        logging.info("jupyter_copilot | Registered handler at %s", handler[0])
+
     logging.info("jupyter_copilot | Sucessfully registered handlers at %s", base_url)
