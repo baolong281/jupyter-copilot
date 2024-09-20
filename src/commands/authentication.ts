@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import { JupyterFrontEnd } from '@jupyterlab/application';
 import { makePostRequest } from '../utils';
 import { Widget } from '@lumino/widgets';
 import { MainAreaWidget } from '@jupyterlab/apputils';
+import { GLOBAL_SETTINGS } from '../index';
 
 interface AlreadySignedInResponse {
   status: 'AlreadySignedIn';
@@ -117,6 +119,10 @@ export const LoginExecute = (app: JupyterFrontEnd): void => {
       return;
     }
 
+    // user may not have actually logged in yet
+    // good enough for now
+    GLOBAL_SETTINGS.setAuthenticated(true);
+
     let widget = signWidget(res);
     if (!widget.isDisposed) {
       widget.dispose();
@@ -151,6 +157,7 @@ export const SignOutExecute = (app: JupyterFrontEnd): void => {
 
     if (res.status === 'NotSignedIn') {
       let widget = SignedOutWidget();
+      GLOBAL_SETTINGS.setAuthenticated(false);
       if (!widget.isDisposed) {
         widget.dispose();
         widget = SignedOutWidget();
