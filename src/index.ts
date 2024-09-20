@@ -20,8 +20,31 @@ import { CodeEditor } from '@jupyterlab/codeeditor';
 import { LoginExecute, SignOutExecute } from './commands/authentication';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
-let ENABLED_FLAG = true;
-let COMPLETION_BIND = 'Ctrl J';
+class GlobalSettings {
+  enabled: boolean;
+  completionBind: string;
+  authenticated: boolean;
+
+  constructor() {
+    this.enabled = true;
+    this.completionBind = 'Ctrl J';
+    this.authenticated = false;
+  }
+
+  setEnabled(enabled: boolean) {
+    this.enabled = enabled;
+  }
+
+  setCompletionBind(completionBind: string) {
+    this.completionBind = completionBind;
+  }
+
+  setAuthenticated(authenticated: boolean) {
+    this.authenticated = authenticated;
+  }
+}
+
+export const GLOBAL_SETTINGS = new GlobalSettings();
 
 class CopilotInlineProvider implements IInlineCompletionProvider {
   readonly name = 'GitHub Copilot';
@@ -45,7 +68,7 @@ class CopilotInlineProvider implements IInlineCompletionProvider {
     request: CompletionHandler.IRequest,
     context: IInlineCompletionContext
   ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
-    if (!ENABLED_FLAG) {
+    if (!GLOBAL_SETTINGS.enabled || !GLOBAL_SETTINGS.authenticated) {
       return { items: [] };
     }
 
@@ -147,9 +170,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
       ([, settings]) => {
         let keybindingDisposer: IDisposable | null = null;
         const loadSettings = (settings: ISettingRegistry.ISettings) => {
-          ENABLED_FLAG = settings.get('flag').composite as boolean;
-          COMPLETION_BIND = settings.get('keybind').composite as string;
-          console.debug('Settings loaded:', ENABLED_FLAG, COMPLETION_BIND);
+          const enabled = settings.get('flag').composite as boolean;
+          const completion_bind = settings.get('keybind').composite as string;
+          GLOBAL_SETTINGS.setEnabled(enabled);
+          GLOBAL_SETTINGS.setCompletionBind(completion_bind);
+
+          console.debug('Settings loaded:', enabled, completion_bind);
 
           if (keybindingDisposer) {
             const currentKeys = app.commands.keyBindings.find(
@@ -161,7 +187,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           }
           keybindingDisposer = app.commands.addKeyBinding({
             command,
-            keys: [COMPLETION_BIND],
+            keys: [completion_bind],
             selector: '.cm-editor'
           });
         };

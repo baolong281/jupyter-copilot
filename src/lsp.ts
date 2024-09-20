@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 /*
     This class is responsible for communicating with the LSP server and
     the notebook frontend. It establishes a WebSocket connection with the
@@ -65,10 +66,12 @@ class NotebookLSPClient {
       case 'sync_response':
         break;
       case 'completion':
-        const pendingCompletion = this.pendingCompletions.get(data.req_id);
-        if (pendingCompletion) {
-          pendingCompletion.resolve(data.completions);
-          this.pendingCompletions.delete(data.req_id);
+        {
+          const pendingCompletion = this.pendingCompletions.get(data.req_id);
+          if (pendingCompletion) {
+            pendingCompletion.resolve(data.completions);
+            this.pendingCompletions.delete(data.req_id);
+          }
         }
         break;
       case 'connection_established':
