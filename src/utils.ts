@@ -7,6 +7,8 @@ export const makePostRequest = async (route: string, body: object) => {
     const settings = ServerConnection.makeSettings();
     const requestUrl = URLExt.join(settings.baseUrl, 'jupyter-copilot', route);
 
+    console.debug('requestUrl:', requestUrl);
+
     const init: RequestInit = {
       method: 'POST',
       body: JSON.stringify(body),

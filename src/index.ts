@@ -130,7 +130,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     palette: ICommandPalette,
     settingRegistry: ISettingRegistry
   ) => {
-    console.log('Jupyter Copilot Extension Activated');
+    console.debug('Jupyter Copilot Extension Activated');
 
     const command = 'jupyter_copilot:completion';
 
@@ -149,11 +149,13 @@ const plugin: JupyterFrontEndPlugin<void> = {
         const loadSettings = (settings: ISettingRegistry.ISettings) => {
           ENABLED_FLAG = settings.get('flag').composite as boolean;
           COMPLETION_BIND = settings.get('keybind').composite as string;
-          console.log('Settings loaded:', ENABLED_FLAG, COMPLETION_BIND);
+          console.debug('Settings loaded:', ENABLED_FLAG, COMPLETION_BIND);
 
           if (keybindingDisposer) {
-            const currentKeys = app.commands.keyBindings.find(kb => kb.command === command)?.keys;
-            console.log("Disposing old keybinding ", currentKeys)
+            const currentKeys = app.commands.keyBindings.find(
+              kb => kb.command === command
+            )?.keys;
+            console.debug('Disposing old keybinding ', currentKeys);
             keybindingDisposer.dispose();
             keybindingDisposer = null;
           }

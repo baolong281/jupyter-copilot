@@ -24,6 +24,7 @@ class NotebookLSPClient {
     { resolve: (value: any) => void; reject: (reason?: any) => void }
   > = new Map();
   private wsUrl: string;
+  private isReconnecting: boolean = false;
 
   constructor(notebookPath: string, wsUrl: string) {
     this.wsUrl = `${wsUrl}?path=${encodeURIComponent(notebookPath)}`;
@@ -46,8 +47,15 @@ class NotebookLSPClient {
   }
 
   private handleSocketClose = () => {
-    console.log('Socket connection closed, reconnecting...');
+    if (this.isReconnecting) {
+      return;
+    }
+    this.isReconnecting = true;
     this.initializeWebSocket();
+    console.debug('Socket closed, reconnecting...');
+    setTimeout(() => {
+      this.isReconnecting = false;
+    }, 4000);
   };
 
   // Handle messages from the extension server
@@ -64,10 +72,10 @@ class NotebookLSPClient {
         }
         break;
       case 'connection_established':
-        console.log('Copilot connected to extension server...');
+        console.debug('Copilot connected to extension server...');
         break;
       default:
-        console.log('Unknown message type:', data);
+        console.error('Unknown message type:', data);
     }
   }
 
@@ -132,7 +140,7 @@ class NotebookLSPClient {
   // cleans up the socket connection
   public dispose() {
     this.socket?.close();
-    console.log('socket connection closed');
+    console.debug('socket connection closed');
   }
 }
 

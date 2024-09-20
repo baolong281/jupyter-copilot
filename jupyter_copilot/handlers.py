@@ -8,7 +8,6 @@ import json
 import nbformat
 import os
 from jupyter_copilot.lsp import LSPWrapper
-from jupyter_server.base.handlers import APIHandler
 from jupyter_server.base.handlers import JupyterHandler
 
 class NotebookManager:
@@ -19,6 +18,8 @@ class NotebookManager:
     """
     def __init__(self, path):
         self.path = path
+        # remove leading slash for name
+        self.name = path[1:] if path.startswith("/") else path
         self.document_version = 0
         self.language = "python"
         self.notebook_cells = self.load_notebook()
@@ -56,7 +57,7 @@ class NotebookManager:
 
         lsp_client.send_notification("textDocument/didOpen", {
             "textDocument": {
-                "uri": f"file:///{self.path}",
+                "uri": f"file:///{self.name}",
                 "languageId": self.language,
                 "version": self.document_version,
                 "text": "".join(code)
@@ -107,7 +108,7 @@ class NotebookManager:
         code = self.get_full_code()
         lsp_client.send_notification("textDocument/didChange", {
             "textDocument": {
-                "uri": f"file:///{self.path}",
+                "uri": f"file:///{self.name}",
                 "version": self.document_version
             },
             "contentChanges": [{"text": code}]
@@ -123,7 +124,7 @@ class NotebookManager:
         logging.debug(f"[Copilot] Requesting completion for cell {cell_id}, line {line}, character {character}")
         response = lsp_client.send_request("getCompletions", {
             "doc": {
-                "uri": f"file:///{self.path}",
+                "uri": f"file:///{self.name}",
                 "position": {"line": line, "character": character},
                 "version": self.document_version
             }
@@ -140,28 +141,29 @@ class NotebookManager:
 
     def handle_path_change(self, path):
         """ on path change, send close signal to lsp and open signal with new path """
-        new_path = f"file:///{path}"
-        
+
         self.send_close_signal()
+
+        self.path = path
+        self.name = path[1:] if path.startswith("/") else path
 
         lsp_client.send_notification("textDocument/didOpen", {
             "textDocument": {
-                "uri": new_path,
+                "uri": f"file:///{self.name}",
                 "languageId": self.language,
                 "version": self.document_version,
                 "text": self.get_full_code()
             }
         })
 
-        self.path = path
-
+        logging.debug(f"[Copilot] Path changed to {self.path}")
 
     def send_close_signal(self):
         """ send a close signal to the lsp server """
         logging.debug("[Copilot] Sending close signal to LSP for %s", self.path)
         lsp_client.send_notification("textDocument/didClose", {
             "textDocument": {
-                "uri": f"file:///{self.path}"
+                "uri": f"file:///{self.name}"
             }
         })
 
@@ -174,7 +176,7 @@ class NotebookManager:
         self.send_close_signal( )
         lsp_client.send_notification("textDocument/didOpen", {
             "textDocument": {
-                "uri": f"file:///{self.path}",
+                "uri": f"file:///{self.name}",
                 "languageId": self.language,
                 "version": self.document_version,
                 "text": self.get_full_code()
@@ -193,6 +195,7 @@ class NotebookLSPHandler(WebSocketHandler):
 
     async def open(self, *args, **kwargs):
         notebook_path = self.get_argument('path', '')
+        notebook_path = os.path.join(root_dir, notebook_path)
         self.notebook_manager = NotebookManager(notebook_path)
         await self.send_message('connection_established', {})
         logging.debug("[Copilot] WebSocket opened")
@@ -243,7 +246,9 @@ class NotebookLSPHandler(WebSocketHandler):
         if self.notebook_manager is None:
             raise Exception("Notebook manager not initialized")
 
-        self.notebook_manager.handle_path_change(data['new_path'])
+        notebook_path = data['new_path']
+        notebook_path = os.path.join(root_dir, notebook_path)
+        self.notebook_manager.handle_path_change(notebook_path)
 
     async def handle_set_language(self, data):
         if self.notebook_manager is None:
@@ -321,8 +326,12 @@ def setup_handlers(server_app):
     global logging
     logging = server_app.log
 
+    global root_dir
+    root_dir = server_app.root_dir
+
     global lsp_client
     lsp_client = LSPWrapper(logging)
+
 
     web_app = server_app.web_app
     host_pattern = ".*$"
@@ -331,9 +340,5 @@ def setup_handlers(server_app):
         (url_path_join(base_url, "ws"), NotebookLSPHandler),
         (url_path_join(base_url, "(.+)"), AuthHandler)
     ]
-    logging.info("[Copilot] Copilot Base URL: %s", base_url)
     web_app.add_handlers(host_pattern, handlers)
-
-
-
-
+    logging.info("jupyter_copilot | Sucessfully registered handlers at %s", base_url)
