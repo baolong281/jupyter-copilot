@@ -7,7 +7,7 @@ A GitHub Copilot extension for JupyterLab. This extension uses the language serv
 ![https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif](https://github.com/baolong281/jupyter-copilot/blob/656c425c9956eb1563a3f90990e0b270ebff725f/imgs/demo.gif?raw=true)
 
 
-**⚠️ WARNING: You should not use this for remote notebooks over SSH as authentication for the extension server  is currently disabled. Also, This extension also only supports JupyterLab and not classic notebooks :(**
+**⚠️ WARNING: You should not use this for remote notebooks over SSH as authentication for the extension server  is currently disabled. Also, This extension also only supports JupyterLab, Jupyter Notebook 7 but not the Classic Notebook (v6)**
 
 **This extension is still very new and may be rough around the edges. If you experience any bugs or have any feature requests please feel free to open an issue or make a PR :)**
 
@@ -20,7 +20,7 @@ A GitHub Copilot extension for JupyterLab. This extension uses the language serv
 
 ## **Requirements**
 
-- JupyterLab >= 4.0.0
+- JupyterLab >= 4.1.0 or Jupyter Notebook >= 7.1.0
 - Node.js >= 18.x
 
 ## Setup
