@@ -52,7 +52,7 @@ class NotebookManager:
             code = ['']
 
         # when a notebook is newly created and never run this information is not available
-        if nb.metadata and nb.metadata.kernelspec:
+        if nb.metadata and nb.metadata.kernelspec and nb.metadata.kernelspec.language:
             self.language = nb.metadata.kernelspec.language.lower()
 
         lsp_client.send_notification("textDocument/didOpen", {
