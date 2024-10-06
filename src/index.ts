@@ -119,14 +119,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
         const SignInCommand = 'Copilot: Sign In';
         app.commands.addCommand(SignInCommand, {
           label: 'Copilot: Sign In With GitHub',
-          iconClass: 'cpgithub-icon',
           execute: () => LoginExecute(app)
         });
 
         const SignOutCommand = 'Copilot: Sign Out';
         app.commands.addCommand(SignOutCommand, {
           label: 'Copilot: Sign Out With GitHub',
-          iconClass: 'cpgithub-icon',
           execute: () => SignOutExecute(app)
         });
 
@@ -151,13 +149,21 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     const model = new CopilotChat();
 
-    model.messagesUpdated.connect(chat => {
-      console.log(chat);
+    // Log when messages are updated
+    model.messagesUpdated.connect(() => {
+      console.log('Messages updated:', model.messages);
     });
 
     const widget = new ChatWidget({ model, rmRegistry });
 
+    console.log('widget:', widget);
+
+    // Ensure the widget is properly connected to the model
+
     app.shell.add(widget, 'right');
+
+    // Test sending a message programmatically
+    model.sendMessage({ body: 'Test message' });
 
     const serverSettings = ServerConnection.makeSettings();
 
