@@ -13,6 +13,9 @@ import { LoginExecute, SignOutExecute } from './commands/authentication';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { makePostRequest } from './utils';
 import { CopilotInlineProvider } from './completions';
+import { CopilotChat } from './chat';
+import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
+import { ChatWidget } from '@jupyter/chat';
 
 class GlobalSettings {
   enabled: boolean;
@@ -28,7 +31,6 @@ class GlobalSettings {
       .then(response => {
         const res = JSON.parse(response) as any;
         this.authenticated = res.status === 'AlreadySignedIn';
-        console.log(this.authenticated);
       })
       .catch(error => {
         console.error('Error checking authentication state:', error);
@@ -58,6 +60,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   description: 'GitHub Copilot for Jupyter',
   autoStart: true,
   requires: [
+    IRenderMimeRegistry,
     INotebookTracker,
     ICompletionProviderManager,
     ICommandPalette,
@@ -65,6 +68,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   ],
   activate: (
     app: JupyterFrontEnd,
+    rmRegistry: IRenderMimeRegistry,
     notebookTracker: INotebookTracker,
     providerManager: ICompletionProviderManager,
     palette: ICommandPalette,
@@ -144,6 +148,16 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     const provider = new CopilotInlineProvider(notebookClients);
     providerManager.registerInlineProvider(provider);
+
+    const model = new CopilotChat();
+
+    model.messagesUpdated.connect(chat => {
+      console.log(chat);
+    });
+
+    const widget = new ChatWidget({ model, rmRegistry });
+
+    app.shell.add(widget, 'right');
 
     const serverSettings = ServerConnection.makeSettings();
 
