@@ -182,8 +182,9 @@ class LSPWrapper:
                 content_length = int(header.strip().split(': ')[1])
                 self.process.stdout.readline()  # Read the empty line
                 content = self.process.stdout.read(content_length)
+                self.logger.info("[Copilot] Received payload from LSP server: %s", content)
                 self._handle_received_payload(json.loads(content))
-            except Exception as e:
+            except Exception self.logger e:
                 self.logger.error(f"Error processing server output: {e}")
         
 
