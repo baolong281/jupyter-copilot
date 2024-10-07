@@ -184,7 +184,7 @@ class LSPWrapper:
                 content = self.process.stdout.read(content_length)
                 self.logger.info("[Copilot] Received payload from LSP server: %s", content)
                 self._handle_received_payload(json.loads(content))
-            except Exception self.logger e:
+            except Exception as e:
                 self.logger.error(f"Error processing server output: {e}")
         
 
