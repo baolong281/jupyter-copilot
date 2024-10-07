@@ -2,24 +2,20 @@ import {
   JupyterFrontEnd,
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
+import { ICompletionProviderManager } from '@jupyterlab/completer';
 import { IDisposable } from '@lumino/disposable';
 import { INotebookTracker } from '@jupyterlab/notebook';
 import { ServerConnection } from '@jupyterlab/services';
 import { URLExt } from '@jupyterlab/coreutils';
 import { NotebookLSPClient } from './lsp';
 import { ICommandPalette } from '@jupyterlab/apputils';
-import {
-  ICompletionProviderManager,
-  IInlineCompletionItem,
-  IInlineCompletionList,
-  IInlineCompletionProvider,
-  IInlineCompletionContext,
-  CompletionHandler
-} from '@jupyterlab/completer';
-import { CodeEditor } from '@jupyterlab/codeeditor';
 import { LoginExecute, SignOutExecute } from './commands/authentication';
 import { ISettingRegistry } from '@jupyterlab/settingregistry';
 import { makePostRequest } from './utils';
+import { CopilotInlineProvider } from './completions';
+import { CopilotChat } from './chat';
+import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
+import { ChatWidget } from '@jupyter/chat';
 
 class GlobalSettings {
   enabled: boolean;
@@ -35,7 +31,6 @@ class GlobalSettings {
       .then(response => {
         const res = JSON.parse(response) as any;
         this.authenticated = res.status === 'AlreadySignedIn';
-        console.log(this.authenticated);
       })
       .catch(error => {
         console.error('Error checking authentication state:', error);
@@ -57,93 +52,6 @@ class GlobalSettings {
 
 export const GLOBAL_SETTINGS = new GlobalSettings();
 
-class CopilotInlineProvider implements IInlineCompletionProvider {
-  readonly name = 'GitHub Copilot';
-  readonly identifier = 'jupyter_copilot:provider';
-  readonly rank = 1000;
-  notebookClients: Map<string, NotebookLSPClient>;
-  private lastRequestTime: number = 0;
-  private timeout: any = null;
-  private lastResolved: (
-    value:
-      | IInlineCompletionList<IInlineCompletionItem>
-      | PromiseLike<IInlineCompletionList<IInlineCompletionItem>>
-  ) => void = () => {};
-  private requestInProgress: boolean = false;
-
-  constructor(notebookClients: Map<string, NotebookLSPClient>) {
-    this.notebookClients = notebookClients;
-  }
-
-  async fetch(
-    request: CompletionHandler.IRequest,
-    context: IInlineCompletionContext
-  ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
-    if (!GLOBAL_SETTINGS.enabled || !GLOBAL_SETTINGS.authenticated) {
-      return { items: [] };
-    }
-
-    const now = Date.now();
-
-    // debounce mechanism
-    // if a request is made within 90ms of the last request, throttle the request
-    // but if it is the last request, then make the request
-    if (this.requestInProgress || now - this.lastRequestTime < 150) {
-      this.lastRequestTime = now;
-
-      // this request was made less than 90ms after the last request
-      // so we resolve the last request with an empty list then clear the timeout
-      this.lastResolved({ items: [] });
-      clearTimeout(this.timeout);
-
-      return new Promise(resolve => {
-        this.lastResolved = resolve;
-        // set a timeout that will resolve the request after 200ms
-        // if no calls are made within 90ms then this will resolve and fetch
-        // if a call comes in < 90ms then this will be cleared and the request will be solved to empty list
-        this.timeout = setTimeout(async () => {
-          this.requestInProgress = true;
-          this.lastRequestTime = Date.now();
-
-          const items = await this.fetchCompletion(request, context);
-
-          resolve(items);
-        }, 200);
-      });
-    } else {
-      // if request is not throttled, just get normally
-      this.requestInProgress = true;
-      this.lastRequestTime = now;
-
-      return await this.fetchCompletion(request, context);
-    }
-  }
-
-  // logic to actually fetch the completion
-  private async fetchCompletion(
-    _request: CompletionHandler.IRequest,
-    context: IInlineCompletionContext
-  ): Promise<IInlineCompletionList<IInlineCompletionItem>> {
-    const editor = (context as any).editor as CodeEditor.IEditor;
-    const cell = (context.widget as any)._content._activeCellIndex;
-    const client = this.notebookClients.get((context.widget as any).id);
-    const cursor = editor?.getCursorPosition();
-    const { line, column } = cursor;
-    client?.sendUpdateLSPVersion();
-    const items: IInlineCompletionItem[] = [];
-    const completions = await client?.getCopilotCompletion(cell, line, column);
-    completions?.forEach(completion => {
-      items.push({
-        // sometimes completions have ``` in them, so we remove it
-        insertText: completion.displayText.replace('```', ''),
-        isIncomplete: false
-      });
-    });
-    this.requestInProgress = false;
-    return { items };
-  }
-}
-
 /**
  * Initialization data for the jupyter_copilot extension.
  */
@@ -152,6 +60,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   description: 'GitHub Copilot for Jupyter',
   autoStart: true,
   requires: [
+    IRenderMimeRegistry,
     INotebookTracker,
     ICompletionProviderManager,
     ICommandPalette,
@@ -159,6 +68,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
   ],
   activate: (
     app: JupyterFrontEnd,
+    rmRegistry: IRenderMimeRegistry,
     notebookTracker: INotebookTracker,
     providerManager: ICompletionProviderManager,
     palette: ICommandPalette,
@@ -209,14 +119,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
         const SignInCommand = 'Copilot: Sign In';
         app.commands.addCommand(SignInCommand, {
           label: 'Copilot: Sign In With GitHub',
-          iconClass: 'cpgithub-icon',
           execute: () => LoginExecute(app)
         });
 
         const SignOutCommand = 'Copilot: Sign Out';
         app.commands.addCommand(SignOutCommand, {
           label: 'Copilot: Sign Out With GitHub',
-          iconClass: 'cpgithub-icon',
           execute: () => SignOutExecute(app)
         });
 
@@ -238,6 +146,24 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     const provider = new CopilotInlineProvider(notebookClients);
     providerManager.registerInlineProvider(provider);
+
+    const model = new CopilotChat();
+
+    // Log when messages are updated
+    model.messagesUpdated.connect(() => {
+      console.log('Messages updated:', model.messages);
+    });
+
+    const widget = new ChatWidget({ model, rmRegistry });
+
+    console.log('widget:', widget);
+
+    // Ensure the widget is properly connected to the model
+
+    app.shell.add(widget, 'right');
+
+    // Test sending a message programmatically
+    model.sendMessage({ body: 'Test message' });
 
     const serverSettings = ServerConnection.makeSettings();
 
