@@ -16,7 +16,8 @@ class LSPWrapper:
     def __init__(self, logger):
         current_dir = os.path.dirname(os.path.abspath(__file__))
         lsp_path = os.path.join(current_dir, "dist", "language-server.js")
-        self.spawn_command = ["node", lsp_path, "--stdio"]
+        node_path = os.getenv("JUPYTER_COPILOT_NODE_PATH", "node")
+        self.spawn_command = [node_path, lsp_path, "--stdio"]
 
 
         self.logger = logger
